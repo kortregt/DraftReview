@@ -39,7 +39,8 @@ class MyClient(discord.Client):
     @tasks.loop(hours=1)  # task runs every 60 seconds
     async def my_background_task(self):
         channel = self.get_channel(842662513400348684)  # channel ID goes here
-        await channel.send(self.draftDict)
+        for page in self.draftDict.keys(): 
+            await channel.send(self.draftDict[page])
 
     @my_background_task.before_loop
     async def before_my_task(self):
