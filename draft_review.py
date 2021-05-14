@@ -4,28 +4,29 @@ from os import environ
 import json
 import requests
 
+def populate_dic():
+    pageDic = {}
+    params = {"action": "query", "list": "categorymembers", "cmtitle": "Category:Drafts_awaiting_review",
+              "format": "json"}
+    url = 'https://2b2t.miraheze.org/'
+
+    request = requests.get(url + "w/api.php", params=params)
+    json_data = request.json()
+
+    pages = json_data['query']['categorymembers']
+    for i in range(len(pages)):
+        title = pages[i]['title']
+        link = url + "wiki/" + pages[i]['title']
+        pageDic[title] = link
+
+    return pageDic
 
 class MyClient(discord.Client):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         # an attribute we can access from our task
-        self.draftDict = {
-
-        }
-
-        params = {"action": "query", "list": "categorymembers", "cmtitle": "Category:Drafts_awaiting_review",
-                  "format": "json"}
-        url = 'https://2b2t.miraheze.org/'
-
-        request = requests.get(url + "w/api.php", params=params)
-        json_data = request.json()
-
-        pages = json_data['query']['categorymembers']
-        for i in range(len(pages)):
-            title = pages[i]['title']
-            link = url + "wiki/" + pages[i]['title']
-            self.draftDict[title] = link
+        self.draftDict = populate_dic()
 
         # start the task to run in the background
         self.my_background_task.start()
