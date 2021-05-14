@@ -50,8 +50,8 @@ class MyClient(discord.Client):
 
         for page in newPages:
             name = page[page.find('/', page.find('/') + 1)+1:]
-            author = 'Submitted by ' + page[page.find(':')+1:page.find('/')]
-            embed = discord.Embed(title='Draft of '+name, url=self.draftDict[page], description=author, color=discord.
+            author = 'Author: ' + page[page.find(':')+1:page.find('/')]
+            embed = discord.Embed(title='Draft: '+name, url=self.draftDict[page], description=author, color=discord.
                                   Color.from_rgb(0, 255, 1))
             await channel.send(embed=embed)
 
