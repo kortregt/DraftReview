@@ -26,7 +26,7 @@ class MyClient(discord.Client):
         super().__init__(*args, **kwargs)
 
         # an attribute we can access from our task
-        self.draftDict = populate_dic()
+        self.draftDict = {}
 
         # start the task to run in the background
         self.my_background_task.start()
@@ -40,7 +40,13 @@ class MyClient(discord.Client):
     @tasks.loop(hours=1)  # task runs every 60 seconds
     async def my_background_task(self):
         channel = self.get_channel(842662513400348684)  # channel ID goes here
-        for page in self.draftDict.keys(): 
+
+        oldReviewPages = set(self.draftDict)
+        self.draftDict = populate_dic()
+        newReviewPages = set(self.draftDict)
+        newPages = [x for x in newReviewPages if x not in oldReviewPages]
+
+        for page in newPages:
             await channel.send(self.draftDict[page])
 
     @my_background_task.before_loop
