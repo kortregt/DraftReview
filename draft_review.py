@@ -4,6 +4,7 @@ from os import environ
 import json
 import requests
 
+
 def populate_dic():
     pageDic = {}
     params = {"action": "query", "list": "categorymembers", "cmtitle": "Category:Drafts_awaiting_review",
@@ -20,6 +21,7 @@ def populate_dic():
         pageDic[title] = link
 
     return pageDic
+
 
 class MyClient(discord.Client):
     def __init__(self, *args, **kwargs):
