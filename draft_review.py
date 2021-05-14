@@ -39,7 +39,7 @@ class MyClient(discord.Client):
         print(self.user.id)
         print('------')
 
-    @tasks.loop(hours=1)  # task runs every 60 seconds
+    @tasks.loop(seconds=60)  # task runs every 60 seconds
     async def my_background_task(self):
         channel = self.get_channel(842662513400348684)  # channel ID goes here
 
@@ -49,7 +49,11 @@ class MyClient(discord.Client):
         newPages = [x for x in newReviewPages if x not in oldReviewPages]
 
         for page in newPages:
-            await channel.send(self.draftDict[page])
+            name = page[page.find('/', page.find('/') + 1)+1:]
+            author = 'Submitted by ' + page[page.find(':')+1:page.find('/')]
+            embed = discord.Embed(title='Draft of '+name, url=self.draftDict[page], description=author, color=discord.
+                                  Color.from_rgb(0, 255, 1))
+            await channel.send(embed=embed)
 
     @my_background_task.before_loop
     async def before_my_task(self):
