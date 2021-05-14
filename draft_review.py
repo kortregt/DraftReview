@@ -10,7 +10,7 @@ class MyClient(discord.Client):
         super().__init__(*args, **kwargs)
 
         # an attribute we can access from our task
-        draftDict = {
+        self.draftDict = {
 
         }
 
@@ -25,7 +25,7 @@ class MyClient(discord.Client):
         for i in range(len(pages)):
             title = pages[i]['title']
             link = url + "wiki/" + pages[i]['title']
-            draftDict[title] = link
+            self.draftDict[title] = link
 
         # start the task to run in the background
         self.my_background_task.start()
