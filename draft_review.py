@@ -1,8 +1,8 @@
-import discord
-from discord.ext import tasks
 from os import environ
-import json
+
+import discord
 import requests
+from discord.ext import tasks
 
 
 def populate_dic():
@@ -34,9 +34,7 @@ class MyClient(discord.Client):
         self.my_background_task.start()
 
     async def on_ready(self):
-        print('Logged in as')
-        print(self.user.name)
-        print(self.user.id)
+        print(f'Logged in as {self.user} (ID: {self.user.id})')
         print('------')
 
     @tasks.loop(seconds=60)  # task runs every 60 seconds
@@ -47,13 +45,25 @@ class MyClient(discord.Client):
         self.draftDict = populate_dic()
         newReviewPages = set(self.draftDict)
         newPages = [x for x in newReviewPages if x not in oldReviewPages]
-
         for page in newPages:
-            name = page[page.find('/', page.find('/') + 1)+1:]
-            author = 'Author: ' + page[page.find(':')+1:page.find('/')]
-            embed = discord.Embed(title='Draft: '+name, url=self.draftDict[page], description=author, color=discord.
-                                  Color.from_rgb(0, 255, 1))
-            await channel.send(embed=embed)
+            name = page[page.find('/', page.find('/') + 1) + 1:]
+            user = page[page.find(':') + 1:page.find('/')]
+
+            user_params = {"action": "query", "list": "users", "ususers": page[page.find(':') + 1:page.find('/')],
+                           "format": "json"}
+            user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
+            user_json = user_request.json()
+            user_id = str(user_json['query']['users'][0]['userid'])
+
+            guild = MyClient.get_guild(self, 697848129185120256)
+            role = guild.get_role(843007895573889024)
+
+            embed = discord.Embed(title='Draft: ' + name, url=self.draftDict[page],
+                                  color=discord.Color.from_rgb(36, 255, 0))
+            embed.set_author(name=user, url="https://2b2t.miraheze.org/wiki/User:" + user,
+                             icon_url="https://static.miraheze.org/2b2twiki/avatars/2b2twiki_" + user_id + "_l.png")
+
+            await channel.send(role.mention, embed=embed)
 
     @my_background_task.before_loop
     async def before_my_task(self):
