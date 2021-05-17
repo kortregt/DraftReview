@@ -2,7 +2,7 @@ import requests
 from os import environ
 
 
-def move_page(old_page, new_page):
+def move_page(user, name):
     S = requests.Session()
 
     URL = "https://2b2t.miraheze.org/w/api.php"
@@ -55,8 +55,8 @@ def move_page(old_page, new_page):
     PARAMS_4 = {
         "action": "move",
         "format": "json",
-        "from": old_page,
-        "to": new_page,
+        "from": f"User:{user}/Drafts/{name}",
+        "to": name,
         "reason": "Approved draft",
         "movetalk": "1",
         "noredirect": "1",
