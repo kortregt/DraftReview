@@ -69,7 +69,7 @@ class DraftBot(commands.Cog):
     @commands.command(name='help')
     async def help(self, ctx: commands.Context):
         embed = discord.Embed(title="Commands", color=0x24ff00)
-        embed.add_field(name="Vote on a draft", value="~startvote <user> <article>", inline=False)
+        embed.add_field(name="Vote on a draft", value="~vote <start|end> <user> <article>", inline=False)
         embed.add_field(name="Approve a draft", value="~approve <user> <article>", inline=False)
         embed.add_field(name="Reject a draft", value='~reject <user> <article> <"reason">', inline=False)
         await ctx.send(embed=embed)
