@@ -1,8 +1,9 @@
-from os import environ
-
 import discord
 import requests
-from discord.ext import tasks
+from discord.ext import tasks, commands
+
+import draft_deny
+import draft_move
 
 
 def populate_dic():
@@ -23,27 +24,22 @@ def populate_dic():
     return pageDic
 
 
-class MyClient(discord.Client):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class DraftBot(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self.draft_dict = {}
+        self.fetch_draft.start()
 
-        # an attribute we can access from our task
-        self.draftDict = {}
+    def cog_unload(self):
+        self.fetch_draft.cancel()
 
-        # start the task to run in the background
-        self.my_background_task.start()
+    @tasks.loop(seconds=60)
+    async def fetch_draft(self, *args):
+        channel = self.bot.get_channel(842662513400348684)  # channel ID goes here
 
-    async def on_ready(self):
-        print(f'Logged in as {self.user} (ID: {self.user.id})')
-        print('------')
-
-    @tasks.loop(seconds=60)  # task runs every 60 seconds
-    async def my_background_task(self):
-        channel = self.get_channel(842662513400348684)  # channel ID goes here
-
-        oldReviewPages = set(self.draftDict)
-        self.draftDict = populate_dic()
-        newReviewPages = set(self.draftDict)
+        oldReviewPages = set(self.draft_dict)
+        self.draft_dict = populate_dic()
+        newReviewPages = set(self.draft_dict)
         newPages = [x for x in newReviewPages if x not in oldReviewPages]
         for page in newPages:
             name = page[page.find('/', page.find('/') + 1) + 1:]
@@ -55,20 +51,43 @@ class MyClient(discord.Client):
             user_json = user_request.json()
             user_id = str(user_json['query']['users'][0]['userid'])
 
-            guild = MyClient.get_guild(self, 697848129185120256)
+            guild = self.bot.get_guild(697848129185120256)
             role = guild.get_role(843007895573889024)
 
-            embed = discord.Embed(title='Draft: ' + name, url=self.draftDict[page],
+            embed = discord.Embed(title='Draft: ' + name, url=self.draft_dict[page],
                                   color=discord.Color.from_rgb(36, 255, 0))
             embed.set_author(name=user, url="https://2b2t.miraheze.org/wiki/User:" + user,
                              icon_url="https://static.miraheze.org/2b2twiki/avatars/2b2twiki_" + user_id + "_l.png")
 
             await channel.send(role.mention, embed=embed)
 
-    @my_background_task.before_loop
-    async def before_my_task(self):
-        await self.wait_until_ready()  # wait until the bot logs in
+    @fetch_draft.before_loop
+    async def before_fetch_draft(self):
+        print('waiting...')
+        await self.bot.wait_until_ready()
+
+    @commands.command(name='help')
+    async def help(self, ctx: commands.Context):
+        embed = discord.Embed(title="Commands", color=0x24ff00)
+        embed.add_field(name="Vote on a draft", value="~startvote <user> <article>", inline=False)
+        embed.add_field(name="Approve a draft", value="~approve <user> <article>", inline=False)
+        embed.add_field(name="Reject a draft", value='~reject <user> <article> <"reason">', inline=False)
+        await ctx.send(embed=embed)
+
+    @commands.command(name='approve')
+    async def approve(self, ctx: commands.Context, user, name):
+        draft_deny.deny_page(user, name, "Approved draft")
+        draft_move.move_page(user, name)
+        await ctx.send(f"Successfully moved page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}> to page " +
+                       f"<https://2b2t.miraheze.org/wiki/{name}>")
+        del self.draft_dict[f"User:{user}/Drafts/{name}"]
+
+    @commands.command(name='reject')
+    async def reject(self, ctx: commands.Context, user, name, summary='Rejected draft'):
+        draft_deny.deny_page(user, name, summary)
+        await ctx.send(f"Successfully rejected page https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}")
+        del self.draft_dict[f"User:{user}/Drafts/{name}"]
 
 
-client = MyClient()
-client.run(environ['BotToken'])
+def setup(bot: commands.Bot):
+    bot.add_cog(DraftBot(bot))
