@@ -19,8 +19,8 @@ def populate_dic():
     for i in range(len(pages)):
         title = pages[i]['title']
         link = url + "wiki/" + pages[i]['title']
+        link = link.replace(" ", "_")
         pageDic[title] = link
-
     return pageDic
 
 
@@ -56,7 +56,7 @@ class DraftBot(commands.Cog):
 
             embed = discord.Embed(title='Draft: ' + name, url=self.draft_dict[page],
                                   color=discord.Color.from_rgb(36, 255, 0))
-            embed.set_author(name=user, url="https://2b2t.miraheze.org/wiki/User:" + user,
+            embed.set_author(name=user, url="https://2b2t.miraheze.org/wiki/User:" + user.replace(" ", "_"),
                              icon_url="https://static.miraheze.org/2b2twiki/avatars/2b2twiki_" + user_id + "_l.png")
 
             await channel.send(role.mention, embed=embed)
