@@ -78,6 +78,8 @@ class DraftBot(commands.Cog):
     async def approve(self, ctx: commands.Context, user, name):
         draft_deny.deny_page(user, name, "Approved draft")
         draft_move.move_page(user, name)
+        user = user.replace(" ", "_")
+        name = name.replace(" ", "_")
         await ctx.send(f"Successfully moved page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}> to page " +
                        f"<https://2b2t.miraheze.org/wiki/{name}>")
         del self.draft_dict[f"User:{user}/Drafts/{name}"]
@@ -85,6 +87,8 @@ class DraftBot(commands.Cog):
     @commands.command(name='reject')
     async def reject(self, ctx: commands.Context, user, name, summary='Rejected draft'):
         draft_deny.deny_page(user, name, summary)
+        user = user.replace(" ", "_")
+        name = name.replace(" ", "_")
         await ctx.send(f"Successfully rejected page https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}")
         del self.draft_dict[f"User:{user}/Drafts/{name}"]
 
