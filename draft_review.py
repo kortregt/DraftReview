@@ -1,6 +1,7 @@
 import discord
 import requests
 from discord.ext import tasks, commands
+import datetime
 
 import draft_deny
 import draft_move
@@ -60,6 +61,8 @@ class DraftBot(commands.Cog):
                              icon_url="https://static.miraheze.org/2b2twiki/avatars/2b2twiki_" + user_id + "_l.png")
 
             await channel.send(role.mention, embed=embed)
+            datetime_object = datetime.datetime.now()
+            print(f"Found Draft:{user}/{name} at {str(datetime_object)}")
 
     @fetch_draft.before_loop
     async def before_fetch_draft(self):
@@ -76,20 +79,27 @@ class DraftBot(commands.Cog):
 
     @commands.command(name='approve')
     async def approve(self, ctx: commands.Context, user, name):
+        datetime_object = datetime.datetime.now()
+        print(f"Command ~approve {user} {name} run at {str(datetime_object)}")
         draft_deny.deny_page(user, name, "Approved draft")
         draft_move.move_page(user, name)
         user = user.replace(" ", "_")
         name = name.replace(" ", "_")
         await ctx.send(f"Successfully moved page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}> to page " +
                        f"<https://2b2t.miraheze.org/wiki/{name}>")
+        print(f"Successfully moved page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}> to page " +
+              f"<https://2b2t.miraheze.org/wiki/{name}>")
         del self.draft_dict[f"User:{user}/Drafts/{name}"]
 
     @commands.command(name='reject')
     async def reject(self, ctx: commands.Context, user, name, summary='Rejected draft'):
+        datetime_object = datetime.datetime.now()
+        print(f"Command ~reject {user} {name} {summary} run at {str(datetime_object)}")
         draft_deny.deny_page(user, name, summary)
         user = user.replace(" ", "_")
         name = name.replace(" ", "_")
         await ctx.send(f"Successfully rejected page https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}")
+        print(f"Successfully rejected page https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}")
         del self.draft_dict[f"User:{user}/Drafts/{name}"]
 
 
