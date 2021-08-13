@@ -14,6 +14,7 @@ def populate_dic():
     url = 'https://2b2t.miraheze.org/'
 
     request = requests.get(url + "w/api.php", params=params)
+    request.raise_for_status()
     json_data = request.json()
 
     pages = json_data['query']['categorymembers']
@@ -39,30 +40,33 @@ class DraftBot(commands.Cog):
         channel = self.bot.get_channel(842662513400348684)  # channel ID goes here
 
         oldReviewPages = set(self.draft_dict)
-        self.draft_dict = populate_dic()
-        newReviewPages = set(self.draft_dict)
-        newPages = [x for x in newReviewPages if x not in oldReviewPages]
-        for page in newPages:
-            name = page[page.find('/', page.find('/') + 1) + 1:]
-            user = page[page.find(':') + 1:page.find('/')]
+        try:
+            self.draft_dict = populate_dic()
+            newReviewPages = set(self.draft_dict)
+            newPages = [x for x in newReviewPages if x not in oldReviewPages]
+            for page in newPages:
+                name = page[page.find('/', page.find('/') + 1) + 1:]
+                user = page[page.find(':') + 1:page.find('/')]
 
-            user_params = {"action": "query", "list": "users", "ususers": page[page.find(':') + 1:page.find('/')],
-                           "format": "json"}
-            user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
-            user_json = user_request.json()
-            user_id = str(user_json['query']['users'][0]['userid'])
+                user_params = {"action": "query", "list": "users", "ususers": page[page.find(':') + 1:page.find('/')],
+                               "format": "json"}
+                user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
+                user_json = user_request.json()
+                user_id = str(user_json['query']['users'][0]['userid'])
 
-            guild = self.bot.get_guild(697848129185120256)
-            role = guild.get_role(843007895573889024)
+                guild = self.bot.get_guild(697848129185120256)
+                role = guild.get_role(843007895573889024)
 
-            embed = discord.Embed(title='Draft: ' + name, url=self.draft_dict[page],
-                                  color=discord.Color.from_rgb(36, 255, 0))
-            embed.set_author(name=user, url="https://2b2t.miraheze.org/wiki/User:" + user.replace(" ", "_"),
-                             icon_url="https://static.miraheze.org/2b2twiki/avatars/2b2twiki_" + user_id + "_l.png")
+                embed = discord.Embed(title='Draft: ' + name, url=self.draft_dict[page],
+                                      color=discord.Color.from_rgb(36, 255, 0))
+                embed.set_author(name=user, url="https://2b2t.miraheze.org/wiki/User:" + user.replace(" ", "_"),
+                                 icon_url="https://static.miraheze.org/2b2twiki/avatars/2b2twiki_" + user_id + "_l.png")
 
-            await channel.send(role.mention, embed=embed)
-            datetime_object = datetime.datetime.now()
-            print(f"Found Draft:{user}/{name} at {str(datetime_object)}")
+                await channel.send(role.mention, embed=embed)
+                datetime_object = datetime.datetime.now()
+                print(f"Found Draft:{user}/{name} at {str(datetime_object)}")
+        except requests.HTTPError as e:
+            print(e)
 
     @fetch_draft.before_loop
     async def before_fetch_draft(self):
