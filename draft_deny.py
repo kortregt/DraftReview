@@ -3,18 +3,18 @@ from os import environ
 
 
 def deny_page(user, name, summary="Rejected draft"):
-    rev_id = ""
+    text = ""
 
     S = requests.Session()
 
     URL = "https://2b2t.miraheze.org/w/api.php"
 
-    # Step 0: Get most recent revision ID of target page
+    # Step 0: Get most recent revision content of target page
     PARAMS_0 = {
         "action": "query",
         "prop": "revisions",
         "titles": f"User:{user}/Drafts/{name}",
-        "rvprop": "ids",
+        "rvprop": "content",
         "formatversion": "2",
         "format": "json"
     }
@@ -25,7 +25,9 @@ def deny_page(user, name, summary="Rejected draft"):
     for page in PAGES:
         REVISIONS = page["revisions"]
         for revision in REVISIONS:
-            rev_id = revision["revid"]
+            text = revision["content"]
+
+    text = text.replace('{{review}}', '')
 
     # Step 1: GET request to fetch login token
     PARAMS_1 = {
@@ -71,7 +73,7 @@ def deny_page(user, name, summary="Rejected draft"):
         "bot": "1",
         "token": CSRF_TOKEN,
         "format": "json",
-        "undo": rev_id,
+        "text": text,
         "summary": summary
     }
 
