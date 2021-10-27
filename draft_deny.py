@@ -1,5 +1,8 @@
 import requests
 from os import environ
+import re
+
+template = re.compile('{{review}}', re.IGNORECASE)
 
 
 def deny_page(user, name, summary="Rejected draft"):
@@ -27,7 +30,7 @@ def deny_page(user, name, summary="Rejected draft"):
         for revision in REVISIONS:
             text = revision["content"]
 
-    text = text.replace('{{review}}', '')
+    text = re.sub(template, '', text)
 
     # Step 1: GET request to fetch login token
     PARAMS_1 = {
