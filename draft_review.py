@@ -62,7 +62,8 @@ class DraftBot(commands.Cog):
                 embed.set_author(name=user, url="https://2b2t.miraheze.org/wiki/User:" + user.replace(" ", "_"),
                                  icon_url="https://static.miraheze.org/2b2twiki/avatars/2b2twiki_" + user_id + "_l.png")
 
-                await channel.send(role.mention, embed=embed)
+                # await channel.send(role.mention, embed=embed)  # ping
+                await channel.send(embed=embed)  # no ping
                 datetime_object = datetime.datetime.now()
                 print(f"Found Draft:{user}/{name} at {str(datetime_object)}")
         except requests.HTTPError as e:
@@ -104,8 +105,8 @@ class DraftBot(commands.Cog):
         draft_deny.deny_page(user, name, summary)
         user = user.replace(" ", "_")
         name = name.replace(" ", "_")
-        await ctx.send(f"Successfully rejected page https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}")
-        print(f"Successfully rejected page https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}")
+        await ctx.send(f"Successfully rejected page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}>")
+        print(f"Successfully rejected page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}>")
         del self.draft_dict[f"User:{user}/Drafts/{name}"]
 
 
