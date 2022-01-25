@@ -24,11 +24,11 @@ class DraftVote(commands.Cog):
             final_count = discord.Embed(title=f"Results for Draft: {title} by {name}",
                                         color=discord.Color.from_rgb(36, 255, 0))
             if reactions[0].count > reactions[1].count:
-                final_count.description = f'Approved\n{str(reactions[0])} **| {str(reactions[0].count)}**\n' \
-                                          f'\n{str(reactions[1])}  **|  {str(reactions[1].count)}**'
+                final_count.description = f'Approved\n{str(reactions[0])} **| {str(reactions[0].count - 1)}**\n' \
+                                          f'\n{str(reactions[1])}  **|  {str(reactions[1].count - 1)}**'
             else:
-                final_count.description = f'Rejected\n{str(reactions[0])} **| {str(reactions[0].count)}**\n' \
-                                          f'\n{str(reactions[1])}  **|  {str(reactions[1].count)}**'
+                final_count.description = f'Rejected\n{str(reactions[0])} **| {str(reactions[0].count - 1)}**\n' \
+                                          f'\n{str(reactions[1])}  **|  {str(reactions[1].count - 1)}**'
             await ctx.send(embed=final_count)
 
 
