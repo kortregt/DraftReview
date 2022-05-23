@@ -2,9 +2,13 @@ import discord
 import requests
 from discord.ext import tasks, commands
 import datetime
+import re
 
 import draft_deny
 import draft_move
+import page_move
+
+good_url = re.compile('.+Drafts/.+')
 
 
 def populate_dic():
@@ -47,7 +51,9 @@ class DraftBot(commands.Cog):
             for page in newPages:
                 name = page[page.find('/', page.find('/') + 1) + 1:]
                 user = page[page.find(':') + 1:page.find('/')]
-
+                if re.fullmatch(good_url, page) is None:
+                    page_move.fix_url(page, user, name)
+                    continue
                 user_params = {"action": "query", "list": "users", "ususers": page[page.find(':') + 1:page.find('/')],
                                "format": "json"}
                 user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
