@@ -22,8 +22,6 @@ def fix_url(page, user, name):
 
     LOGIN_TOKEN = DATA['query']['tokens']['logintoken']
 
-    print(LOGIN_TOKEN)
-
     # Step 2: Send a POST request to log in.
     # See https://www.mediawiki.org/wiki/API:Login for more
     # information on log in methods.
@@ -37,9 +35,6 @@ def fix_url(page, user, name):
     }
 
     R = S.post(URL, data=PARAMS_2)
-    DATA = R.json()
-
-    print(DATA)
 
     # Step 3: While logged in, retrieve a CSRF token
     PARAMS_3 = {
@@ -59,9 +54,8 @@ def fix_url(page, user, name):
         "format": "json",
         "from": bad_title,
         "to": f"User:{user}/Drafts/{name}",
-        "reason": "Moved to correct URL, see Draft Creation Guide for info",
+        "reason": "Moved to correct URL, see [[Draft Creation Guide]] for info",
         "movetalk": "1",
-        "noredirect": "0",
         "token": CSRF_TOKEN
     }
 

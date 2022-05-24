@@ -20,8 +20,6 @@ def move_page(user, name):
 
     LOGIN_TOKEN = DATA['query']['tokens']['logintoken']
 
-    print(LOGIN_TOKEN)
-
     # Step 2: Send a POST request to log in.
     # See https://www.mediawiki.org/wiki/API:Login for more
     # information on log in methods.
@@ -35,9 +33,6 @@ def move_page(user, name):
     }
 
     R = S.post(URL, data=PARAMS_2)
-    DATA = R.json()
-
-    print(DATA)
 
     # Step 3: While logged in, retrieve a CSRF token
     PARAMS_3 = {

@@ -7,6 +7,7 @@ import re
 import draft_deny
 import draft_move
 import page_move
+import clean_redirects
 
 good_url = re.compile('.+Drafts/.+')
 
@@ -95,6 +96,7 @@ class DraftBot(commands.Cog):
         datetime_object = datetime.datetime.now()
         print(f"Command ~approve {user} {name} run at {str(datetime_object)}")
         draft_deny.deny_page(user, name, "Approved draft")
+        clean_redirects.clean(user, name)
         draft_move.move_page(user, name)
         user = user.replace(" ", "_")
         name = name.replace(" ", "_")
