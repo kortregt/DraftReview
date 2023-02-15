@@ -8,6 +8,7 @@ import draft_deny
 import draft_move
 import page_move
 import clean_redirects
+import add_category
 
 good_url = re.compile('.+Drafts/.+')
 
@@ -87,16 +88,19 @@ class DraftBot(commands.Cog):
                               description="Note: for parameters containing spaces, surround the parameters in quotes, "
                                           "or substite spaces with underscores.", color=0x24ff00)
         embed.add_field(name="Vote on a draft", value="~vote <start|end> <user> <article>", inline=False)
-        embed.add_field(name="Approve a draft", value="~approve <user> <article>", inline=False)
+        embed.add_field(name="Approve a draft", value='~approve <user> <article> <"category 1, category 2, etc.">',
+                        inline=False)
         embed.add_field(name="Reject a draft", value='~reject <user> <article> <"reason">', inline=False)
         await ctx.send(embed=embed)
 
     @commands.command(name='approve')
-    async def approve(self, ctx: commands.Context, user, name):
+    async def approve(self, ctx: commands.Context, user, name, categories=None):
         datetime_object = datetime.datetime.now()
         print(f"Command ~approve {user} {name} run at {str(datetime_object)}")
         draft_deny.deny_page(user, name, "Approved draft")
         clean_redirects.clean(user, name)
+        if categories is not None:
+            add_category.add_category(user, name, categories)
         draft_move.move_page(user, name)
         user = user.replace(" ", "_")
         name = name.replace(" ", "_")
