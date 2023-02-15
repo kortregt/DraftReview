@@ -1,5 +1,8 @@
 import requests
 from os import environ
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def fix_url(page, user, name):

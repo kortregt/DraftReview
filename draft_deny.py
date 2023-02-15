@@ -1,6 +1,9 @@
 import requests
 from os import environ
 import re
+from dotenv import load_dotenv
+
+load_dotenv()
 
 template = re.compile('{{review}}', re.IGNORECASE)
 
