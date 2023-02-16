@@ -43,7 +43,7 @@ class DraftBot(commands.Cog):
 
     @tasks.loop(seconds=60)
     async def fetch_draft(self, *args):
-        channel = self.bot.get_channel(842662513400348684)  # channel ID goes here
+        channel = self.bot.get_channel(1075585762243915787)  # channel ID goes here
 
         oldReviewPages = set(self.draft_dict)
         try:
@@ -122,5 +122,5 @@ class DraftBot(commands.Cog):
         del self.draft_dict[f"User:{user}/Drafts/{name}"]
 
 
-def setup(bot: commands.Bot):
-    bot.add_cog(DraftBot(bot))
+async def setup(bot: commands.Bot):
+    await bot.add_cog(DraftBot(bot))

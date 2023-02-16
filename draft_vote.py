@@ -32,5 +32,5 @@ class DraftVote(commands.Cog):
             await ctx.send(embed=final_count)
 
 
-def setup(bot: commands.Bot):
-    bot.add_cog(DraftVote(bot))
+async def setup(bot: commands.Bot):
+    await bot.add_cog(DraftVote(bot))

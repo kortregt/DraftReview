@@ -1,7 +1,7 @@
-FROM python:3
+FROM python:3.9
 
-ADD *.py .
+ADD *.py ./
 
-RUN pip install requests discord.py==1.7.2 python-dotenv
+RUN pip install requests discord.py python-dotenv
 
 CMD ["python", "./start_bot.py"]
