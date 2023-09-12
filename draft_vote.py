@@ -8,6 +8,7 @@ class DraftVote(commands.Cog):
         self.vote_id = 0
 
     @commands.command(name='vote')
+    @commands.has_role(843007895573889024)
     async def vote(self, ctx: commands.Context, status, name, title):
         await ctx.message.delete()
         if status == 'start':
