@@ -46,7 +46,7 @@ class DraftBot(commands.Cog):
     @tasks.loop(seconds=60)
     async def fetch_draft(self, *args):
         # channel = self.bot.get_channel(1075585762243915787)  # channel ID goes here (bot testing)
-        channel = self.bot.get_channel(842662513400348684)  # channel ID goes here (draft-review)
+        channel = self.bot.get_channel(1150122572294410441)  # channel ID goes here (draft-menders)
 
         oldReviewPages = set(self.draft_dict)
         try:
@@ -114,6 +114,7 @@ class DraftBot(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(name='approve')
+    @commands.has_role(843007895573889024)
     async def approve(self, ctx: commands.Context, user, name, categories=None):
         datetime_object = datetime.datetime.now()
         print(f"Command ~approve {user} {name} run at {str(datetime_object)}")
@@ -133,6 +134,7 @@ class DraftBot(commands.Cog):
         await thread.archive()
 
     @commands.command(name='reject')
+    @commands.has_role(843007895573889024)
     async def reject(self, ctx: commands.Context, user, name, summary='Rejected draft'):
         datetime_object = datetime.datetime.now()
         print(f"Command ~reject {user} {name} {summary} run at {str(datetime_object)}")
@@ -144,6 +146,28 @@ class DraftBot(commands.Cog):
         del self.draft_dict[f"User:{user}/Drafts/{name}"]
         thread = discord.utils.get(threads, name='Draft: ' + name)
         await thread.archive()
+
+    @commands.command(name='list')
+    async def list(self, ctx:commands.Context):
+        print("List:")
+        for page in self.draft_dict:
+            channel = self.bot.get_channel(842662513400348684)
+            name = page[page.find('/', page.find('/') + 1) + 1:]
+            user = page[page.find(':') + 1:page.find('/')]
+            user_params = {"action": "query", "list": "users", "ususers": page[page.find(':') + 1:page.find('/')],
+                           "format": "json"}
+            user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
+            user_json = user_request.json()
+            user_id = str(user_json['query']['users'][0]['userid'])
+            embed = discord.Embed(title='Draft: ' + name, url=self.draft_dict[page],
+                                  color=discord.Color.from_rgb(36, 255, 0))
+            embed.set_author(name=user, url="https://2b2t.miraheze.org/wiki/User:" + user.replace(" ", "_"),
+                             icon_url="https://static.miraheze.org/2b2twiki/avatars/2b2twiki_" + user_id + "_l.png")
+
+            # await channel.send(role.mention, embed=embed)  # ping
+            await channel.send(embed=embed)  # no ping
+            datetime_object = datetime.datetime.now()
+            print(f"Found Draft:{user}/{name} at {str(datetime_object)}")
 
 
 def setup(bot: commands.Bot):
