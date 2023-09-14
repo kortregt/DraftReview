@@ -42,14 +42,20 @@ class DraftVote(commands.Cog):
 
     @discord.application_command(name="vote", description="Starts/ends voting on a draft.")
     @commands.has_role(843007895573889024)
-    async def vote(self, interaction: discord.Interaction, name, title):
+    @discord.option("duration", float, description="Length of the vote in hours", required=False)
+    @discord.option("name", str, description="Author of the draft", required=True)
+    @discord.option("title", str, description="Title of the draft", required=True)
+    async def vote(self, interaction: discord.Interaction, name, title, duration):
         await interaction.response.defer()
         page = discord.Embed(title=f"Vote for Draft: {title} by {name}",
                              color=discord.Color.from_rgb(36, 255, 0))
         poll = Poll()
         message = await interaction.followup.send(embed=page, view=poll)
         # await asyncio.sleep(5)  # testing purposes
-        await asyncio.sleep(86400)  # one day
+        if duration is not None:
+            await asyncio.sleep(duration*3600)
+        else:
+            await asyncio.sleep(86400)  # one day
         poll.children[0].disabled = True
         poll.children[1].disabled = True
         page.title = f"Vote for Draft: {title} by {name} has ended"
