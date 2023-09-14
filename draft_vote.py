@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 import discord
 from discord.ext import commands
@@ -48,18 +49,23 @@ class DraftVote(commands.Cog):
     async def vote(self, interaction: discord.Interaction, name, title, duration):
         await interaction.response.defer()
         page = discord.Embed(title=f"Vote for Draft: {title} by {name}",
-                             color=discord.Color.from_rgb(36, 255, 0))
+                             color=discord.Color.from_rgb(36, 255, 0),
+                             description=("Vote end: <t:" + str(round(time.time()+duration*3600))) + ":R>")
         poll = Poll()
         message = await interaction.followup.send(embed=page, view=poll)
         # await asyncio.sleep(5)  # testing purposes
         if duration is not None:
             await asyncio.sleep(duration*3600)
         else:
-            await asyncio.sleep(86400)  # one day
+            duration = 24
+            await asyncio.sleep(duration*3600)  # one day
         poll.children[0].disabled = True
         poll.children[1].disabled = True
         page.title = f"Vote for Draft: {title} by {name} has ended"
+        guild = self.bot.get_guild(697848129185120256)
+        role = guild.get_role(843007895573889024)
         await message.edit(embed=page, view=poll)
+        await interaction.followup.send(role.mention, allowed_mentions=discord.AllowedMentions.all())
 
 
 def setup(bot):
