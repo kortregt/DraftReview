@@ -65,8 +65,8 @@ class DraftBot(commands.Cog):
                 user_json = user_request.json()
                 user_id = str(user_json['query']['users'][0]['userid'])
 
-                guild = self.bot.get_guild(697848129185120256)
-                role = guild.get_role(843007895573889024)
+                # guild = self.bot.get_guild(697848129185120256)
+                # role = guild.get_role(843007895573889024)
                 threads.update(channel.threads)
                 async for thread in channel.archived_threads():
                     threads.add(thread)
@@ -102,20 +102,26 @@ class DraftBot(commands.Cog):
         print('waiting...')
         await self.bot.wait_until_ready()
 
-    @commands.command(name='help')
-    async def help(self, ctx: commands.Context):
+    @discord.application_command(name='help', description="Displays and explains this bot's functions")
+    async def help(self, interaction: discord.Interaction):
+        await interaction.response.defer()
         embed = discord.Embed(title="Commands",
                               description="Note: for parameters containing spaces, surround the parameters in quotes, "
-                                          "or substite spaces with underscores.", color=0x24ff00)
-        embed.add_field(name="Vote on a draft", value="~vote <start|end> <user> <article>", inline=False)
-        embed.add_field(name="Approve a draft", value='~approve <user> <article> <"category 1, category 2, etc.">',
+                                          "or substitute spaces with underscores.", color=0x24ff00)
+        embed.add_field(name="Vote on a draft", value="/vote <user> <article> <duration> <auto>", inline=False)
+        embed.add_field(name="Approve a draft", value='/approve <user> <article> <"category 1, category 2, etc.">',
                         inline=False)
-        embed.add_field(name="Reject a draft", value='~reject <user> <article> <"reason">', inline=False)
-        await ctx.send(embed=embed)
+        embed.add_field(name="Reject a draft", value='/reject <user> <article> <"reason">', inline=False)
+        await interaction.followup.send(embed=embed)
 
-    @commands.command(name='approve')
+    @discord.application_command(name='approve', description="Approves a draft on the Wiki")
     @commands.has_role(843007895573889024)
-    async def approve(self, ctx: commands.Context, user, name, categories=None):
+    @discord.option("name", str, description="Author of the draft", required=True)
+    @discord.option("title", str, description="Title of the draft", required=True)
+    @discord.option("categories", str, description="Categories to add to the draft. Wrap in quotes and separate "
+                                                   "with commas", required=False)
+    async def approve(self, interaction: discord.Interaction, user, name, categories):
+        await interaction.response.defer()
         datetime_object = datetime.datetime.now()
         print(f"Command ~approve {user} {name} run at {str(datetime_object)}")
         draft_deny.deny_page(user, name, "Approved draft")
@@ -125,33 +131,40 @@ class DraftBot(commands.Cog):
         draft_move.move_page(user, name)
         user = user.replace(" ", "_")
         name = name.replace(" ", "_")
-        await ctx.send(f"Successfully moved page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}> to page " +
-                       f"<https://2b2t.miraheze.org/wiki/{name}>")
+        await interaction.followup.send(f"Successfully moved page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/"
+                                        f"{name}> to page <https://2b2t.miraheze.org/wiki/{name}>")
         print(f"Successfully moved page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}> to page " +
               f"<https://2b2t.miraheze.org/wiki/{name}>")
         del self.draft_dict[f"User:{user}/Drafts/{name}"]
         thread = discord.utils.get(threads, name='Draft: ' + name)
         await thread.archive()
 
-    @commands.command(name='reject')
+    @discord.application_command(name='reject', description="Rejects a draft on the Wiki")
     @commands.has_role(843007895573889024)
-    async def reject(self, ctx: commands.Context, user, name, summary='Rejected draft'):
+    @discord.option("name", str, description="Author of the draft", required=True)
+    @discord.option("title", str, description="Title of the draft", required=True)
+    @discord.option("summary", str, description="Reason for rejection, used for the edit summary", required=False)
+    async def reject(self, interaction: discord.Interaction, user, name, summary):
+        await interaction.response.defer()
         datetime_object = datetime.datetime.now()
         print(f"Command ~reject {user} {name} {summary} run at {str(datetime_object)}")
+        if summary is None:
+            summary = "Rejected draft"
         draft_deny.deny_page(user, name, summary)
         user = user.replace(" ", "_")
         name = name.replace(" ", "_")
-        await ctx.send(f"Successfully rejected page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}>")
+        await (interaction.followup.send
+               (f"Successfully rejected page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}>"))
         print(f"Successfully rejected page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}>")
         del self.draft_dict[f"User:{user}/Drafts/{name}"]
         thread = discord.utils.get(threads, name='Draft: ' + name)
         await thread.archive()
 
-    @commands.command(name='list')
-    async def list(self, ctx:commands.Context):
-        print("List:")
+    @discord.application_command(name='list', description="Provides a list of all pending drafts")
+    async def list(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        pages = []
         for page in self.draft_dict:
-            channel = self.bot.get_channel(842662513400348684)
             name = page[page.find('/', page.find('/') + 1) + 1:]
             user = page[page.find(':') + 1:page.find('/')]
             user_params = {"action": "query", "list": "users", "ususers": page[page.find(':') + 1:page.find('/')],
@@ -163,11 +176,10 @@ class DraftBot(commands.Cog):
                                   color=discord.Color.from_rgb(36, 255, 0))
             embed.set_author(name=user, url="https://2b2t.miraheze.org/wiki/User:" + user.replace(" ", "_"),
                              icon_url="https://static.miraheze.org/2b2twiki/avatars/2b2twiki_" + user_id + "_l.png")
-
-            # await channel.send(role.mention, embed=embed)  # ping
-            await channel.send(embed=embed)  # no ping
+            pages.append(embed)
             datetime_object = datetime.datetime.now()
             print(f"Found Draft:{user}/{name} at {str(datetime_object)}")
+        await interaction.followup.send(embeds=pages)
 
 
 def setup(bot: commands.Bot):

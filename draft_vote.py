@@ -1,37 +1,72 @@
+import asyncio
+import time
+
 import discord
 from discord.ext import commands
 
 
+class Poll(discord.ui.View):
+    yesList = []
+    noList = []
+
+    @discord.ui.button(label="Approve: 0", custom_id="approve", style=discord.ButtonStyle.green, emoji="👍")
+    async def approve_callback(self, approve, interaction: discord.Interaction):
+        user = interaction.user
+        if user not in self.yesList:
+            self.yesList.append(user)
+            if user in self.noList:
+                self.noList.remove(user)
+                self.children[1].label = f"Reject: {len(self.noList)}"
+        else:
+            self.yesList.remove(user)
+        approve.label = f"Approve: {len(self.yesList)}"
+        await interaction.response.edit_message(view=self)
+
+    @discord.ui.button(label="Reject: 0", custom_id="reject", style=discord.ButtonStyle.red, emoji="👎")
+    async def reject_callback(self, reject, interaction: discord.Interaction):
+        user = interaction.user
+        if user not in self.noList:
+            self.noList.append(user)
+            if user in self.yesList:
+                self.yesList.remove(user)
+                self.children[0].label = f"Approve: {len(self.yesList)}"
+        else:
+            self.noList.remove(user)
+        reject.label = f"Reject: {len(self.noList)}"
+        await interaction.response.edit_message(view=self)
+
+
 class DraftVote(commands.Cog):
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot):
         self.bot = bot
         self.vote_id = 0
 
-    @commands.command(name='vote')
+    @discord.application_command(name="vote", description="Starts/ends voting on a draft.")
     @commands.has_role(843007895573889024)
-    async def vote(self, ctx: commands.Context, status, name, title):
-        await ctx.message.delete()
-        if status == 'start':
-            page = discord.Embed(title=f"Vote for Draft: {title} by {name}", description="",
-                                 color=discord.Color.from_rgb(36, 255, 0))
-            message = await ctx.send(embed=page)
-            await message.add_reaction('🟢')
-            await message.add_reaction('🔴')
-            self.vote_id = message.id
-        if status == 'end':
-            nmsg = await ctx.channel.fetch_message(self.vote_id)
-            reactions = nmsg.reactions
+    @discord.option("duration", float, description="Length of the vote in hours", required=False)
+    @discord.option("name", str, description="Author of the draft", required=True)
+    @discord.option("title", str, description="Title of the draft", required=True)
+    async def vote(self, interaction: discord.Interaction, name, title, duration):
+        await interaction.response.defer()
+        page = discord.Embed(title=f"Vote for Draft: {title} by {name}",
+                             color=discord.Color.from_rgb(36, 255, 0),
+                             description=("Vote end: <t:" + str(round(time.time()+duration*3600))) + ":R>")
+        poll = Poll()
+        message = await interaction.followup.send(embed=page, view=poll)
+        # await asyncio.sleep(5)  # testing purposes
+        if duration is not None:
+            await asyncio.sleep(duration*3600)
+        else:
+            duration = 24
+            await asyncio.sleep(duration*3600)  # one day
+        poll.children[0].disabled = True
+        poll.children[1].disabled = True
+        page.title = f"Vote for Draft: {title} by {name} has ended"
+        guild = self.bot.get_guild(697848129185120256)
+        role = guild.get_role(843007895573889024)
+        await message.edit(embed=page, view=poll)
+        await interaction.followup.send(role.mention, allowed_mentions=discord.AllowedMentions.all())
 
-            final_count = discord.Embed(title=f"Results for Draft: {title} by {name}",
-                                        color=discord.Color.from_rgb(36, 255, 0))
-            if reactions[0].count > reactions[1].count:
-                final_count.description = f'Approved\n{str(reactions[0])} **| {str(reactions[0].count - 1)}**\n' \
-                                          f'\n{str(reactions[1])}  **|  {str(reactions[1].count - 1)}**'
-            else:
-                final_count.description = f'Rejected\n{str(reactions[0])} **| {str(reactions[0].count - 1)}**\n' \
-                                          f'\n{str(reactions[1])}  **|  {str(reactions[1].count - 1)}**'
-            await ctx.send(embed=final_count)
 
-
-def setup(bot: commands.Bot):
+def setup(bot):
     bot.add_cog(DraftVote(bot))
