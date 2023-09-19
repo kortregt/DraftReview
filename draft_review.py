@@ -18,7 +18,7 @@ threads = set()
 def populate_dic():
     pageDic = {}
     params = {"action": "query", "list": "categorymembers", "cmtitle": "Category:Drafts_awaiting_review",
-              "format": "json"}
+              "cmlimit": "100", "format": "json"}
     url = 'https://2b2t.miraheze.org/'
 
     request = requests.get(url + "w/api.php", params=params)
