@@ -4,6 +4,8 @@ import time
 import discord
 from discord.ext import commands
 
+import draft_review
+
 
 class Poll(discord.ui.View):
     yesList = []
@@ -121,13 +123,15 @@ class VoteModal(discord.ui.Modal):
         self.draftTitle = ""
 
     async def callback(self, interaction: discord.Interaction):
-        textInput = self.children[0].value # this is what the user has inputted into the textbox.
+        textInput = self.children[0].value  # this is what the user has inputted into the textbox.
         if self.accepted:
             # TODO: what to do if the Modal is an accepted Modal
-            print("ACCEPTED {0} by {1}".format(self.draftName, self.draftTitle))
+            await draft_review.DraftBot.approve(self.draftName, self.draftTitle, textInput)
+            print(f"ACCEPTED {0} by {1}".format(self.draftName, self.draftTitle))
         else:
             # TODO: what to do if the Modal is a rejected Modal.
-            print("REJECTED {0} by {1}".format(self.draftName, self.draftTitle))
+            await draft_review.DraftBot.reject(self.draftName, self.draftTitle, textInput)
+            print(f"REJECTED {0} by {1}".format(self.draftName, self.draftTitle))
 
 
         #embed = discord.Embed(title="Modal Results")

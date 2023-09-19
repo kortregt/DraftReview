@@ -114,14 +114,13 @@ class DraftBot(commands.Cog):
         embed.add_field(name="Reject a draft", value='/reject <user> <article> <"reason">', inline=False)
         await interaction.followup.send(embed=embed)
 
-    @discord.application_command(name='approve', description="Approves a draft on the Wiki")
-    @commands.has_role(843007895573889024)
-    @discord.option("name", str, description="Author of the draft", required=True)
-    @discord.option("title", str, description="Title of the draft", required=True)
-    @discord.option("categories", str, description="Categories to add to the draft. Wrap in quotes and separate "
-                                                   "with commas", required=False)
-    async def approve(self, interaction: discord.Interaction, user, name, categories):
-        await interaction.response.defer()
+    # @discord.application_command(name='approve', description="Approves a draft on the Wiki")
+    # @commands.has_role(843007895573889024)
+    # @discord.option("name", str, description="Author of the draft", required=True)
+    # @discord.option("title", str, description="Title of the draft", required=True)
+    # @discord.option("categories", str, description="Categories to add to the draft. Wrap in quotes and separate "
+    #                                                "with commas", required=False)
+    async def approve(self, user, name, categories):
         datetime_object = datetime.datetime.now()
         print(f"Command ~approve {user} {name} run at {str(datetime_object)}")
         draft_deny.deny_page(user, name, "Approved draft")
@@ -131,21 +130,18 @@ class DraftBot(commands.Cog):
         draft_move.move_page(user, name)
         user = user.replace(" ", "_")
         name = name.replace(" ", "_")
-        await interaction.followup.send(f"Successfully moved page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/"
-                                        f"{name}> to page <https://2b2t.miraheze.org/wiki/{name}>")
         print(f"Successfully moved page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}> to page " +
               f"<https://2b2t.miraheze.org/wiki/{name}>")
         del self.draft_dict[f"User:{user}/Drafts/{name}"]
         thread = discord.utils.get(threads, name='Draft: ' + name)
         await thread.archive()
 
-    @discord.application_command(name='reject', description="Rejects a draft on the Wiki")
-    @commands.has_role(843007895573889024)
-    @discord.option("name", str, description="Author of the draft", required=True)
-    @discord.option("title", str, description="Title of the draft", required=True)
-    @discord.option("summary", str, description="Reason for rejection, used for the edit summary", required=False)
-    async def reject(self, interaction: discord.Interaction, user, name, summary):
-        await interaction.response.defer()
+    # @discord.application_command(name='reject', description="Rejects a draft on the Wiki")
+    # @commands.has_role(843007895573889024)
+    # @discord.option("name", str, description="Author of the draft", required=True)
+    # @discord.option("title", str, description="Title of the draft", required=True)
+    # @discord.option("summary", str, description="Reason for rejection, used for the edit summary", required=False)
+    async def reject(self, user, name, summary):
         datetime_object = datetime.datetime.now()
         print(f"Command ~reject {user} {name} {summary} run at {str(datetime_object)}")
         if summary is None:
@@ -153,8 +149,6 @@ class DraftBot(commands.Cog):
         draft_deny.deny_page(user, name, summary)
         user = user.replace(" ", "_")
         name = name.replace(" ", "_")
-        await (interaction.followup.send
-               (f"Successfully rejected page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}>"))
         print(f"Successfully rejected page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}>")
         del self.draft_dict[f"User:{user}/Drafts/{name}"]
         thread = discord.utils.get(threads, name='Draft: ' + name)
