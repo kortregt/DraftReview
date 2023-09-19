@@ -47,12 +47,14 @@ class ModalMessage(discord.ui.View):
         self.accepted = False
         self.draftName = ""
         self.draftTitle = ""
+        self.bot = None
 
     @discord.ui.button(label="Give input for Draft", style=discord.ButtonStyle.green)
     async def button_callback(self, button, interaction: discord.Interaction):
         modal = VoteModal(title=self.title) # Object within and Object. Objectception.
         modal.draftName = self.draftName # gotta parse this shit through
         modal.draftTitle = self.draftTitle
+        modal.bot = self.bot
 
         if self.accepted:
             modal.accepted = True
@@ -69,10 +71,10 @@ class DraftVote(commands.Cog):
         self.vote_id = 0
 
     async def sendModal(self, interaction: discord.Interaction, poll: Poll, name, title):
-        # TODO: Parse the poll draft title and author through.
         modal = ModalMessage()
         modal.draftName = name
         modal.draftTitle = title
+        modal.bot = self.bot
 
         if len(poll.yesList) >= len(poll.noList): # Not sure on rules here, will need to deliberate.
             modal.title = "Accepted"
@@ -110,7 +112,7 @@ class DraftVote(commands.Cog):
         #await interaction.followup.send(role.mention, allowed_mentions=discord.AllowedMentions.all()) # send a mention to the role.
         
         # TODO: instead of a mention to the role, send a MODAL depending on Rejected / Accepted.
-        await self.sendModal(interaction, poll, name, title)
+        await self.sendModal(interaction, poll, name, title, self.bot)
 
 """
 Create Modal for user interaction after vote completion
@@ -121,12 +123,13 @@ class VoteModal(discord.ui.Modal):
         self.accepted = False # Defaulted to false, changed to True in ModalMesage() class.
         self.draftName = ""
         self.draftTitle = ""
+        self.bot = commands.Bot
 
     async def callback(self, interaction: discord.Interaction):
         textInput = self.children[0].value  # this is what the user has inputted into the textbox.
         if self.accepted:
             # TODO: what to do if the Modal is an accepted Modal
-            await draft_review.DraftBot.approve(self.draftName, self.draftTitle, textInput)
+            await self.bot.get_cog('DraftBot') #.approve(self.draftName, self.draftTitle, textInput)
             print(f"ACCEPTED {0} by {1}".format(self.draftName, self.draftTitle))
         else:
             # TODO: what to do if the Modal is a rejected Modal.
