@@ -158,6 +158,8 @@ class DraftBot(commands.Cog):
     async def list(self, interaction: discord.Interaction):
         await interaction.response.defer()
         pages = []
+        pages2 = []
+        need2 = False
         for page in self.draft_dict:
             name = page[page.find('/', page.find('/') + 1) + 1:]
             user = page[page.find(':') + 1:page.find('/')]
@@ -170,10 +172,16 @@ class DraftBot(commands.Cog):
                                   color=discord.Color.from_rgb(36, 255, 0))
             embed.set_author(name=user, url="https://2b2t.miraheze.org/wiki/User:" + user.replace(" ", "_"),
                              icon_url="https://static.miraheze.org/2b2twiki/avatars/2b2twiki_" + user_id + "_l.png")
-            pages.append(embed)
-            datetime_object = datetime.datetime.now()
-            print(f"Found Draft:{user}/{name} at {str(datetime_object)}")
+            if len(pages) < 10:
+                pages.append(embed)
+            else:
+                need2 = True
+                pages2.append(embed)
+            # datetime_object = datetime.datetime.now()
+            # print(f"Found Draft:{user}/{name} at {str(datetime_object)}")
         await interaction.followup.send(embeds=pages)
+        if need2 is True:
+            await interaction.followup.send(embeds=pages2)
 
 
 def setup(bot: commands.Bot):
