@@ -4,8 +4,6 @@ import time
 import discord
 from discord.ext import commands
 
-import draft_review
-
 
 class Poll(discord.ui.View):
     def __init__(self):
@@ -91,7 +89,7 @@ class DraftVote(commands.Cog):
             await interaction.followup.send(view=modal, ephemeral=True)
 
     @discord.commands.application_command(name="vote", description="Starts/ends voting on a draft.")
-    # @commands.has_role(843007895573889024)
+    @commands.has_role(843007895573889024)
     @discord.option("duration", float, description="Length of the vote in hours", required=False)
     @discord.option("name", str, description="Author of the draft", required=True)
     @discord.option("title", str, description="Title of the draft", required=True)
@@ -109,14 +107,7 @@ class DraftVote(commands.Cog):
         poll.children[0].disabled = True  # Disable both buttons. Luckily, they are the only children.
         poll.children[1].disabled = True
         page.title = f"Vote for Draft: {title} by {name} has ended"
-        # TODO: If we want to have the one who started the poll pinged, we will need to do this differently.
-        # guild = self.bot.get_guild(697848129185120256) # get role from discord server
-        # role = guild.get_role(843007895573889024)
         await message.edit(embed=page, view=poll)  # edit the poll with the buttons disabled.
-
-        # await interaction.followup.send(role.mention, allowed_mentions=discord.AllowedMentions.all()) # send a mention to the role.
-
-        # TODO: instead of a mention to the role, send a MODAL depending on Rejected / Accepted.
         await self.sendModal(interaction, poll, name, title, self.bot)
 
 
@@ -137,24 +128,17 @@ class VoteModal(discord.ui.Modal):
         await interaction.response.defer()
         textInput = self.children[0].value  # this is what the user has inputted into the textbox.
         if self.accepted:
-            # TODO: what to do if the Modal is an accepted Modal
             await self.bot.get_cog('DraftBot').approve(self.draftName, self.draftTitle, textInput)
             print("ACCEPTED {0} by {1}".format(self.draftName, self.draftTitle))
             embed = discord.Embed(title=f"Draft:{self.draftTitle} by {self.draftName} approved!")
             embed.url = f"https://2b2t.miraheze.org/wiki/{self.draftTitle}"
             await interaction.response.send(embed=embed)
         else:
-            # TODO: what to do if the Modal is a rejected Modal.
             await self.bot.get_cog('DraftBot').reject(self.draftName, self.draftTitle, textInput)
             print("REJECTED {0} by {1}".format(self.draftName, self.draftTitle))
             embed = discord.Embed(title=f"Draft:{self.draftTitle} by {self.draftName} rejected.")
             embed.url = f"https://2b2t.miraheze.org/wiki/User:{self.draftName}/Drafts/{self.draftTitle}"
             await interaction.followup.send(embed=embed)
-
-        # embed = discord.Embed(title="Modal Results")
-        # embed.add_field(name="Short Input", value=self.children[0].value)
-        # embed.add_field(name="Long Input", value=self.children[1].value)
-        # await interaction.response.send_message(embeds=[embed])
 
 
 def setup(bot):
