@@ -132,7 +132,7 @@ class VoteModal(discord.ui.Modal):
             print("ACCEPTED {0} by {1}".format(self.draftName, self.draftTitle))
             embed = discord.Embed(title=f"Draft:{self.draftTitle} by {self.draftName} approved!")
             embed.url = f"https://2b2t.miraheze.org/wiki/{self.draftTitle}"
-            await interaction.response.send(embed=embed)
+            await interaction.followup.send(embed=embed)
         else:
             await self.bot.get_cog('DraftBot').reject(self.draftName, self.draftTitle, textInput)
             print("REJECTED {0} by {1}".format(self.draftName, self.draftTitle))
