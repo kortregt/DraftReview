@@ -89,7 +89,7 @@ class DraftVote(commands.Cog):
             await interaction.followup.send(view=modal, ephemeral=True)
 
     @discord.commands.application_command(name="vote", description="Starts/ends voting on a draft.")
-    @commands.has_role(843007895573889024)
+    @commands.has_any_role(843007895573889024, 1159901879417974795)
     @discord.option("duration", float, description="Length of the vote in hours", required=False)
     @discord.option("name", str, description="Author of the draft", required=True)
     @discord.option("title", str, description="Title of the draft", required=True)
@@ -131,13 +131,16 @@ class VoteModal(discord.ui.Modal):
             await self.bot.get_cog('DraftBot').approve(self.draftName, self.draftTitle, textInput)
             print("ACCEPTED {0} by {1}".format(self.draftName, self.draftTitle))
             embed = discord.Embed(title=f"Draft:{self.draftTitle} by {self.draftName} approved!")
-            embed.url = f"https://2b2t.miraheze.org/wiki/{self.draftTitle}"
+            draftTitle = self.draftTitle.replace(" ", "_")
+            embed.url = f"https://2b2t.miraheze.org/wiki/{draftTitle}"
             await interaction.followup.send(embed=embed)
         else:
             await self.bot.get_cog('DraftBot').reject(self.draftName, self.draftTitle, textInput)
             print("REJECTED {0} by {1}".format(self.draftName, self.draftTitle))
             embed = discord.Embed(title=f"Draft:{self.draftTitle} by {self.draftName} rejected.")
-            embed.url = f"https://2b2t.miraheze.org/wiki/User:{self.draftName}/Drafts/{self.draftTitle}"
+            draftName = self.draftName.replace(" ", "_")
+            draftTitle = self.draftTitle.replace(" ", "_")
+            embed.url = f"https://2b2t.miraheze.org/wiki/User:{draftName}/Drafts/{draftTitle}"
             await interaction.followup.send(embed=embed)
 
 

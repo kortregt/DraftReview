@@ -131,12 +131,12 @@ class DraftBot(commands.Cog):
             add_category.add_category(user, name, categories)
         draft_move.move_page(user, name)
         del self.draft_dict[f"User:{user}/Drafts/{name}"]
+        thread = discord.utils.get(threads, name='Draft: ' + name)
+        await thread.archive()
         user = user.replace(" ", "_")
         name = name.replace(" ", "_")
         print(f"Successfully moved page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}> to page " +
               f"<https://2b2t.miraheze.org/wiki/{name}>")
-        thread = discord.utils.get(threads, name='Draft: ' + name)
-        await thread.archive()
 
     # @discord.application_command(name='reject', description="Rejects a draft on the Wiki")
     # @commands.has_role(843007895573889024)
@@ -150,11 +150,11 @@ class DraftBot(commands.Cog):
             summary = "Rejected draft"
         draft_deny.deny_page(user, name, summary)
         del self.draft_dict[f"User:{user}/Drafts/{name}"]
+        thread = discord.utils.get(threads, name='Draft: ' + name)
+        await thread.archive()
         user = user.replace(" ", "_")
         name = name.replace(" ", "_")
         print(f"Successfully rejected page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}>")
-        thread = discord.utils.get(threads, name='Draft: ' + name)
-        await thread.archive()
 
     @discord.application_command(name='list', description="Provides a list of all pending drafts")
     async def list(self, interaction: discord.Interaction):
