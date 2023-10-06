@@ -18,7 +18,7 @@ threads = set()
 def populate_dic():
     pageDic = {}
     params = {"action": "query", "list": "categorymembers", "cmtitle": "Category:Drafts_awaiting_review",
-              "format": "json"}
+              "cmlimit": "100", "format": "json"}
     url = 'https://2b2t.miraheze.org/'
 
     request = requests.get(url + "w/api.php", params=params)
@@ -106,64 +106,63 @@ class DraftBot(commands.Cog):
     async def help(self, interaction: discord.Interaction):
         await interaction.response.defer()
         embed = discord.Embed(title="Commands",
-                              description="Note: for parameters containing spaces, surround the parameters in quotes, "
-                                          "or substitute spaces with underscores.", color=0x24ff00)
+                              # description="Note: for parameters containing spaces, surround the parameters in
+                              # quotes, " "or substitute spaces with underscores.", color=0x24ff00
+                              )
+        embed.add_field(name="List drafts awaiting review", value="/list", inline=False)
         embed.add_field(name="Vote on a draft", value="/vote <user> <article> <duration> <auto>", inline=False)
-        embed.add_field(name="Approve a draft", value='/approve <user> <article> <"category 1, category 2, etc.">',
-                        inline=False)
-        embed.add_field(name="Reject a draft", value='/reject <user> <article> <"reason">', inline=False)
+        # embed.add_field(name="Approve a draft", value='/approve <user> <article> <"category 1, category 2, etc.">',
+        #                 inline=False)
+        # embed.add_field(name="Reject a draft", value='/reject <user> <article> <"reason">', inline=False)
         await interaction.followup.send(embed=embed)
 
-    @discord.application_command(name='approve', description="Approves a draft on the Wiki")
-    @commands.has_role(843007895573889024)
-    @discord.option("name", str, description="Author of the draft", required=True)
-    @discord.option("title", str, description="Title of the draft", required=True)
-    @discord.option("categories", str, description="Categories to add to the draft. Wrap in quotes and separate "
-                                                   "with commas", required=False)
-    async def approve(self, interaction: discord.Interaction, user, name, categories):
-        await interaction.response.defer()
+    # @discord.application_command(name='approve', description="Approves a draft on the Wiki")
+    # @commands.has_role(843007895573889024)
+    # @discord.option("name", str, description="Author of the draft", required=True)
+    # @discord.option("title", str, description="Title of the draft", required=True)
+    # @discord.option("categories", str, description="Categories to add to the draft. Wrap in quotes and separate "
+    #                                                "with commas", required=False)
+    async def approve(self, user, name, categories):
         datetime_object = datetime.datetime.now()
-        print(f"Command ~approve {user} {name} run at {str(datetime_object)}")
+        print(f"Command /approve {user} {name} run at {str(datetime_object)}")
         draft_deny.deny_page(user, name, "Approved draft")
         clean_redirects.clean(user, name)
         if categories is not None:
             add_category.add_category(user, name, categories)
         draft_move.move_page(user, name)
+        del self.draft_dict[f"User:{user}/Drafts/{name}"]
         user = user.replace(" ", "_")
         name = name.replace(" ", "_")
-        await interaction.followup.send(f"Successfully moved page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/"
-                                        f"{name}> to page <https://2b2t.miraheze.org/wiki/{name}>")
         print(f"Successfully moved page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}> to page " +
               f"<https://2b2t.miraheze.org/wiki/{name}>")
-        del self.draft_dict[f"User:{user}/Drafts/{name}"]
         thread = discord.utils.get(threads, name='Draft: ' + name)
         await thread.archive()
 
-    @discord.application_command(name='reject', description="Rejects a draft on the Wiki")
-    @commands.has_role(843007895573889024)
-    @discord.option("name", str, description="Author of the draft", required=True)
-    @discord.option("title", str, description="Title of the draft", required=True)
-    @discord.option("summary", str, description="Reason for rejection, used for the edit summary", required=False)
-    async def reject(self, interaction: discord.Interaction, user, name, summary):
-        await interaction.response.defer()
+    # @discord.application_command(name='reject', description="Rejects a draft on the Wiki")
+    # @commands.has_role(843007895573889024)
+    # @discord.option("name", str, description="Author of the draft", required=True)
+    # @discord.option("title", str, description="Title of the draft", required=True)
+    # @discord.option("summary", str, description="Reason for rejection, used for the edit summary", required=False)
+    async def reject(self, user, name, summary):
         datetime_object = datetime.datetime.now()
-        print(f"Command ~reject {user} {name} {summary} run at {str(datetime_object)}")
+        print(f"Command /reject {user} {name} {summary} run at {str(datetime_object)}")
         if summary is None:
             summary = "Rejected draft"
         draft_deny.deny_page(user, name, summary)
+        del self.draft_dict[f"User:{user}/Drafts/{name}"]
         user = user.replace(" ", "_")
         name = name.replace(" ", "_")
-        await (interaction.followup.send
-               (f"Successfully rejected page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}>"))
         print(f"Successfully rejected page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}>")
-        del self.draft_dict[f"User:{user}/Drafts/{name}"]
         thread = discord.utils.get(threads, name='Draft: ' + name)
         await thread.archive()
 
     @discord.application_command(name='list', description="Provides a list of all pending drafts")
     async def list(self, interaction: discord.Interaction):
         await interaction.response.defer()
+        master_list = []
         pages = []
+        master_list.append(pages)
+        counter = 0
         for page in self.draft_dict:
             name = page[page.find('/', page.find('/') + 1) + 1:]
             user = page[page.find(':') + 1:page.find('/')]
@@ -176,10 +175,35 @@ class DraftBot(commands.Cog):
                                   color=discord.Color.from_rgb(36, 255, 0))
             embed.set_author(name=user, url="https://2b2t.miraheze.org/wiki/User:" + user.replace(" ", "_"),
                              icon_url="https://static.miraheze.org/2b2twiki/avatars/2b2twiki_" + user_id + "_l.png")
-            pages.append(embed)
-            datetime_object = datetime.datetime.now()
-            print(f"Found Draft:{user}/{name} at {str(datetime_object)}")
-        await interaction.followup.send(embeds=pages)
+            if len(master_list[counter]) < 10:
+                master_list[counter].append(embed)
+            else:
+                counter += 1
+                new_list = []
+                master_list.append(new_list)
+                master_list[counter].append(embed)
+        for page_list in master_list:
+            await interaction.followup.send(embeds=page_list)
+
+    @discord.application_command(name='debug', description='Intended for bot developers only')
+    @commands.has_role(1159901879417974795)
+    async def debug(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        master_list = []
+        pages = []
+        master_list.append(pages)
+        counter = 0
+        for page in self.draft_dict:
+            embed = discord.Embed(title=page)
+            if len(master_list[counter]) < 10:
+                master_list[counter].append(embed)
+            else:
+                counter += 1
+                new_list = []
+                master_list.append(new_list)
+                master_list[counter].append(embed)
+        for page_list in master_list:
+            await interaction.followup.send(embeds=page_list, ephemeral=True)
 
 
 def setup(bot: commands.Bot):
