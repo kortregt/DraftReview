@@ -80,7 +80,7 @@ class DraftVote(commands.Cog):
         modal.draftTitle = title
         modal.bot = self.bot
 
-        if len(poll.yesList) >= len(poll.noList):  # Not sure on rules here, will need to deliberate.
+        if len(poll.yesList) > len(poll.noList):  # Not sure on rules here, will need to deliberate.
             modal.title = "Accepted"
             modal.accepted = True
             await interaction.followup.send(view=modal, ephemeral=True)
