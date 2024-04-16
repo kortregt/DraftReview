@@ -102,9 +102,9 @@ class DraftBot(commands.Cog):
         print('waiting...')
         await self.bot.wait_until_ready()
 
-    @discord.application_command(name='help', description="Displays and explains this bot's functions")
-    async def help(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+    @commands.slash_command(name='help', description="Displays and explains this bot's functions")
+    async def help(self, ctx: discord.ApplicationContext):
+        await ctx.response.defer()
         embed = discord.Embed(title="Commands",
                               # description="Note: for parameters containing spaces, surround the parameters in
                               # quotes, " "or substitute spaces with underscores.", color=0x24ff00
@@ -114,7 +114,7 @@ class DraftBot(commands.Cog):
         # embed.add_field(name="Approve a draft", value='/approve <user> <article> <"category 1, category 2, etc.">',
         #                 inline=False)
         # embed.add_field(name="Reject a draft", value='/reject <user> <article> <"reason">', inline=False)
-        await interaction.followup.send(embed=embed)
+        await ctx.followup.send(embed=embed)
 
     # @discord.application_command(name='approve', description="Approves a draft on the Wiki")
     # @commands.has_role(843007895573889024)
@@ -156,9 +156,9 @@ class DraftBot(commands.Cog):
         name = name.replace(" ", "_")
         print(f"Successfully rejected page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}>")
 
-    @discord.application_command(name='list', description="Provides a list of all pending drafts")
-    async def list(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+    @commands.slash_command(name='list', description="Provides a list of all pending drafts")
+    async def list(self, ctx:discord.ApplicationContext):
+        await ctx.response.defer()
         master_list = []
         pages = []
         master_list.append(pages)
@@ -183,12 +183,12 @@ class DraftBot(commands.Cog):
                 master_list.append(new_list)
                 master_list[counter].append(embed)
         for page_list in master_list:
-            await interaction.followup.send(embeds=page_list)
+            await ctx.followup.send(embeds=page_list)
 
-    @discord.application_command(name='debug', description='Intended for bot developers only')
+    @commands.slash_command(name='debug', description='Intended for bot developers only')
     @commands.has_role(1159901879417974795)
-    async def debug(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+    async def debug(self, ctx: discord.ApplicationContext):
+        await ctx.response.defer(ephemeral=True)
         master_list = []
         pages = []
         master_list.append(pages)
@@ -203,7 +203,7 @@ class DraftBot(commands.Cog):
                 master_list.append(new_list)
                 master_list[counter].append(embed)
         for page_list in master_list:
-            await interaction.followup.send(embeds=page_list, ephemeral=True)
+            await ctx.followup.send(embeds=page_list, ephemeral=True)
 
 
 def setup(bot: commands.Bot):
