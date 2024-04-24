@@ -4,6 +4,16 @@ import time
 import discord
 from discord.ext import commands
 
+logging_file_path = '/app/logs/discord.log'
+
+
+def log_poll_event(message):
+    # Define the path to the log file
+    log_file_path = 'root/discord_logs/polls.log'
+
+    # Open the file in append mode and write the message
+    with open(log_file_path, 'a') as file:
+        file.write(f"{message}\n")
 
 class Poll(discord.ui.View):
     def __init__(self):
@@ -108,6 +118,10 @@ class DraftVote(commands.Cog):
         poll = Poll()  # Create Poll object
         message = await ctx.followup.send(embed=page,
                                                   view=poll)  # Parse Poll and embed onto a message, and send it.
+        log_string = "Vote for Draft: {} by {} began at {}".format(title, name, time.strftime("%H:%M:%S"))
+        print(log_string)
+        log_poll_event(log_string)
+
         # await asyncio.sleep(5)  # testing purposes
         await asyncio.sleep(duration * 3600)  # duration parsed through
         poll.children[0].disabled = True  # Disable both buttons. Luckily, they are the only children.
@@ -115,6 +129,9 @@ class DraftVote(commands.Cog):
         page.title = f"Vote for Draft: {title} by {name} has ended"
         await message.edit(embed=page, view=poll)  # edit the poll with the buttons disabled.
         await self.sendModal(ctx, poll, name, title, self.bot)
+        log_string = "Vote for Draft: {} by {} ended at {}".format(title, name, time.strftime("%H:%M:%S"))
+        print(log_string)
+        log_poll_event(log_string)
 
 
 """
