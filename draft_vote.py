@@ -4,13 +4,23 @@ import time
 import discord
 from discord.ext import commands
 
+logging_file_path = '/app/logs/discord.log'
+
+
+def log_poll_event(message):
+    # Define the path to the log file
+    log_file_path = 'root/discord_logs/polls.log'
+
+    # Open the file in append mode and write the message
+    with open(log_file_path, 'a') as file:
+        file.write(f"{message}\n")
 
 class Poll(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+        self.yesList = []
+        self.noList = []
 
-    yesList = []
-    noList = []
 
     @discord.ui.button(label="Approve: 0", custom_id="approve", style=discord.ButtonStyle.green, emoji="👍")
     async def approve_callback(self, approve, interaction: discord.Interaction):
@@ -37,6 +47,12 @@ class Poll(discord.ui.View):
             self.noList.remove(user)
         reject.label = f"Reject: {len(self.noList)}"
         await interaction.response.edit_message(view=self)  # change edit_messages to followups.
+
+    async def on_timeout(self):
+        for button in self.children:
+            button.disabled = True  # Disable all buttons to prevent further interaction
+        await self.message.edit(content="This poll has ended.", view=self)
+        print("The poll has ended and buttons are disabled.")
 
 
 """
@@ -88,27 +104,34 @@ class DraftVote(commands.Cog):
             modal.title = "Rejected"
             await interaction.followup.send(view=modal, ephemeral=True)
 
-    @discord.commands.application_command(name="vote", description="Starts/ends voting on a draft.")
+    @commands.slash_command(name="vote", description="Starts/ends voting on a draft.")
     @commands.has_any_role(843007895573889024, 1159901879417974795)
     @discord.option("duration", float, description="Length of the vote in hours", required=False)
     @discord.option("name", str, description="Author of the draft", required=True)
     @discord.option("title", str, description="Title of the draft", required=True)
-    async def vote(self, interaction: discord.Interaction, name, title, duration=24):
-        await interaction.response.defer()
+    async def vote(self, ctx: discord.ApplicationContext, name, title, duration=24):
+        await ctx.response.defer()
         page = discord.Embed(title=f"Vote for Draft: {title} by {name}",
                              color=discord.Color.from_rgb(36, 255, 0),
                              description=("Vote end: <t:" + str(round(time.time() + duration * 3600))) + ":R>")
 
         poll = Poll()  # Create Poll object
-        message = await interaction.followup.send(embed=page,
+        message = await ctx.followup.send(embed=page,
                                                   view=poll)  # Parse Poll and embed onto a message, and send it.
+        log_string = "Vote for Draft: {} by {} began at {}".format(title, name, time.strftime("%H:%M:%S"))
+        print(log_string)
+        log_poll_event(log_string)
+
         # await asyncio.sleep(5)  # testing purposes
         await asyncio.sleep(duration * 3600)  # duration parsed through
         poll.children[0].disabled = True  # Disable both buttons. Luckily, they are the only children.
         poll.children[1].disabled = True
         page.title = f"Vote for Draft: {title} by {name} has ended"
         await message.edit(embed=page, view=poll)  # edit the poll with the buttons disabled.
-        await self.sendModal(interaction, poll, name, title, self.bot)
+        await self.sendModal(ctx, poll, name, title, self.bot)
+        log_string = "Vote for Draft: {} by {} ended at {}".format(title, name, time.strftime("%H:%M:%S"))
+        print(log_string)
+        log_poll_event(log_string)
 
 
 """
