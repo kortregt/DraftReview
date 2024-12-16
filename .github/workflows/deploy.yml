@@ -27,18 +27,18 @@ jobs:
           push: true
           tags: kortregt/draftreview:latest
 
-      - name: Install SSH key
-        uses: shimataro/ssh-key-action@v2
-        with:
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          known_hosts: unnecessary
-          if_key_exists: replace
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.DROPLET_IP }} >> ~/.ssh/known_hosts
 
-      - name: Adding Known Hosts
-        run: ssh-keyscan -H ${{ secrets.DROPLET_IP }} >> ~/.ssh/known_hosts
+      - name: Test SSH connection
+        run: ssh -i ~/.ssh/id_ed25519 -v root@${{ secrets.DROPLET_IP }} "echo 'SSH connection successful'"
 
       - name: Deploy to Digital Ocean
         run: |
-          ssh root@${{ secrets.DROPLET_IP }} "mkdir -p /opt/draftbot"
-          scp docker-compose.yml root@${{ secrets.DROPLET_IP }}:/opt/draftbot/
-          ssh root@${{ secrets.DROPLET_IP }} 'cd /opt/draftbot && echo -e "BotToken=${{ secrets.BOT_TOKEN }}\nWIKI_BOT_PASSWORD=${{ secrets.WIKI_BOT_PASSWORD }}" > .env && docker compose pull && docker compose up -d'
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.DROPLET_IP }} "mkdir -p /opt/draftbot"
+          scp -i ~/.ssh/id_ed25519 docker-compose.yml root@${{ secrets.DROPLET_IP }}:/opt/draftbot/
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.DROPLET_IP }} 'cd /opt/draftbot && echo -e "BotToken=${{ secrets.BOT_TOKEN }}\nWIKI_BOT_PASSWORD=${{ secrets.WIKI_BOT_PASSWORD }}" > .env && docker compose pull && docker compose up -d'
