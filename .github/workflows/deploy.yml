@@ -1,0 +1,44 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [ database ]
+  pull_request:
+    branches: [ database ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: kortregt/draftreview:latest
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          known_hosts: unnecessary
+          if_key_exists: replace
+
+      - name: Adding Known Hosts
+        run: ssh-keyscan -H ${{ secrets.DROPLET_IP }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to Digital Ocean
+        run: |
+          ssh root@${{ secrets.DROPLET_IP }} "mkdir -p /opt/draftbot"
+          scp docker-compose.yml root@${{ secrets.DROPLET_IP }}:/opt/draftbot/
+          ssh root@${{ secrets.DROPLET_IP }} 'cd /opt/draftbot && echo -e "BotToken=${{ secrets.BOT_TOKEN }}\nWIKI_BOT_PASSWORD=${{ secrets.WIKI_BOT_PASSWORD }}" > .env && docker compose pull && docker compose up -d'

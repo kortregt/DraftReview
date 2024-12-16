@@ -3,22 +3,29 @@ import requests
 from discord.ext import tasks, commands
 import datetime
 import re
+import os
 
 import draft_deny
 import draft_move
 import page_move
 import clean_redirects
 import add_category
+from draft_database import DraftDatabase
 
 good_url = re.compile('.+Drafts/.+')
 
 threads = set()
 
 
-def populate_dic():
-    pageDic = {}
-    params = {"action": "query", "list": "categorymembers", "cmtitle": "Category:Drafts_awaiting_review",
-              "cmlimit": "100", "format": "json"}
+def populate_db(db: DraftDatabase):
+    """Populate the database with drafts from the wiki API."""
+    params = {
+        "action": "query",
+        "list": "categorymembers",
+        "cmtitle": "Category:Drafts_awaiting_review",
+        "cmlimit": "100",
+        "format": "json"
+    }
     url = 'https://2b2t.miraheze.org/'
 
     request = requests.get(url + "w/api.php", params=params)
@@ -26,18 +33,18 @@ def populate_dic():
     json_data = request.json()
 
     pages = json_data['query']['categorymembers']
-    for i in range(len(pages)):
-        title = pages[i]['title']
-        link = url + "wiki/" + pages[i]['title']
+    for page in pages:
+        title = page['title']
+        link = url + "wiki/" + page['title']
         link = link.replace(" ", "_")
-        pageDic[title] = link
-    return pageDic
+        db.add_draft(title, link)
 
 
 class DraftBot(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.draft_dict = {}
+        db_path = os.getenv('DATABASE_PATH')
+        self.db = DraftDatabase(db_path)
         self.fetch_draft.start()
 
     def cog_unload(self):
@@ -48,52 +55,68 @@ class DraftBot(commands.Cog):
         # channel = self.bot.get_channel(1075585762243915787)  # channel ID goes here (bot testing)
         channel = self.bot.get_channel(1150122572294410441)  # channel ID goes here (draft-menders)
 
-        oldReviewPages = set(self.draft_dict)
+        old_drafts = set(self.db.get_all_drafts().keys())
         try:
-            self.draft_dict = populate_dic()
-            newReviewPages = set(self.draft_dict)
-            newPages = [x for x in newReviewPages if x not in oldReviewPages]
-            for page in newPages:
+            populate_db(self.db)
+            new_drafts = set(self.db.get_all_drafts().keys())
+            new_pages = [x for x in new_drafts if x not in old_drafts]
+
+            for page in new_pages:
                 name = page[page.find('/', page.find('/') + 1) + 1:]
                 user = page[page.find(':') + 1:page.find('/')]
                 if re.fullmatch(good_url, page) is None:
                     page_move.fix_url(page, user, name)
                     continue
-                user_params = {"action": "query", "list": "users", "ususers": page[page.find(':') + 1:page.find('/')],
-                               "format": "json"}
+
+                user_params = {
+                    "action": "query",
+                    "list": "users",
+                    "ususers": user,
+                    "format": "json"
+                }
+
+                # guild = self.bot.get_guild(697848129185120256)
+                # role = guild.get_role(843007895573889024)
                 user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
                 user_json = user_request.json()
                 user_id = str(user_json['query']['users'][0]['userid'])
 
-                # guild = self.bot.get_guild(697848129185120256)
-                # role = guild.get_role(843007895573889024)
                 threads.update(channel.threads)
                 async for thread in channel.archived_threads():
                     threads.add(thread)
                 thread = discord.utils.get(threads, name='Draft: ' + name)
+
+                draft_url = self.db.get_draft(page).url if self.db.get_draft(page) else None
+                if not draft_url:
+                    continue
                 # if no thread for this draft is found:
                 if thread is None:
-                    embed = discord.Embed(title='Draft: ' + name, url=self.draft_dict[page],
-                                          color=discord.Color.from_rgb(36, 255, 0))
-                    embed.set_author(name=user, url="https://2b2t.miraheze.org/wiki/User:" + user.replace(" ", "_"),
-                                     icon_url="https://static.miraheze.org/2b2twiki/avatars/2b2twiki_" + user_id +
-                                              "_l.png")
+                    embed = discord.Embed(
+                        title='Draft: ' + name,
+                        url=draft_url,
+                        color=discord.Color.from_rgb(36, 255, 0)
+                    )
+                    embed.set_author(
+                        name=user,
+                        url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}",
+                        icon_url=f"https://static.miraheze.org/2b2twiki/avatars/2b2twiki_{user_id}_l.png"
+                    )
 
-                    # await channel.send(role.mention, embed=embed)  # ping
-                    draft_message = await channel.send(embed=embed)  # no ping
-                    new_thread = await channel.create_thread(name='Draft: ' + name, message=draft_message,
-                                                             reason="New draft")
+                    draft_message = await channel.send(embed=embed)
+                    new_thread = await channel.create_thread(
+                        name='Draft: ' + name,
+                        message=draft_message,
+                        reason="New draft"
+                    )
                     threads.add(new_thread)
-                    datetime_object = datetime.datetime.now()
-                    print(f"Found Draft:{user}/{name} at {str(datetime_object)}, new thread opened")
+                    print(f"Found Draft:{user}/{name} at {datetime.datetime.now()}, new thread opened")
                 # else if a thread is found but it is closed:
                 elif thread.archived:
                     await thread.unarchive()
-                    datetime_object = datetime.datetime.now()
-                    print(f"Found Draft:{user}/{name} at {str(datetime_object)}, opened existing thread")
+                    print(f"Found Draft:{user}/{name} at {datetime.datetime.now()}, opened existing thread")
                 else:
-                    datetime_object = datetime.datetime.now()
-                    print(f"Found Draft:{user}/{name} at {str(datetime_object)}, thread already exists")
+                    print(f"Found Draft:{user}/{name} at {datetime.datetime.now()}, thread already exists")
+
         except requests.HTTPError as e:
             print(e)
 
@@ -130,7 +153,7 @@ class DraftBot(commands.Cog):
         if categories is not None:
             add_category.add_category(user, name, categories)
         draft_move.move_page(user, name)
-        del self.draft_dict[f"User:{user}/Drafts/{name}"]
+        self.db.remove_draft(f"User:{user}/Drafts/{name}")
         thread = discord.utils.get(threads, name='Draft: ' + name)
         await thread.archive()
         user = user.replace(" ", "_")
@@ -149,7 +172,7 @@ class DraftBot(commands.Cog):
         if summary is None:
             summary = "Rejected draft"
         draft_deny.deny_page(user, name, summary)
-        del self.draft_dict[f"User:{user}/Drafts/{name}"]
+        self.db.remove_draft(f"User:{user}/Drafts/{name}")
         thread = discord.utils.get(threads, name='Draft: ' + name)
         await thread.archive()
         user = user.replace(" ", "_")

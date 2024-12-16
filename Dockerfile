@@ -1,7 +1,15 @@
-FROM python:3.9
+FROM python:3.12
 
-ADD *.py ./
+WORKDIR /app
 
-RUN pip install requests py-cord python-dotenv
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY *.py .
+
+RUN mkdir -p /app/data
+
+ENV DATABASE_PATH=/app/data/drafts.db
+ENV LOG_DIR=/app/logs
 
 CMD ["python", "./start_bot.py"]
