@@ -125,26 +125,18 @@ class DraftBot(commands.Cog):
         print('waiting...')
         await self.bot.wait_until_ready()
 
-    @commands.slash_command(name='help', description="Displays and explains this bot's functions")
+    @discord.slash_command(name='help', description="Displays and explains this bot's functions")
     async def help(self, ctx: discord.ApplicationContext):
-        await ctx.response.defer()
+        await ctx.defer()
         embed = discord.Embed(title="Commands",
-                              # description="Note: for parameters containing spaces, surround the parameters in
-                              # quotes, " "or substitute spaces with underscores.", color=0x24ff00
-                              )
+                              description="Note: for parameters containing spaces, surround the parameters in quotes, or substitute spaces with underscores.",
+                              color=0x24ff00)
         embed.add_field(name="List drafts awaiting review", value="/list", inline=False)
         embed.add_field(name="Vote on a draft", value="/vote <user> <article> <duration> <auto>", inline=False)
-        # embed.add_field(name="Approve a draft", value='/approve <user> <article> <"category 1, category 2, etc.">',
-        #                 inline=False)
+        # embed.add_field(name="Approve a draft", value='/approve <user> <article> <"category 1, category 2, etc.">', inline=False)
         # embed.add_field(name="Reject a draft", value='/reject <user> <article> <"reason">', inline=False)
-        await ctx.followup.send(embed=embed)
+        await ctx.respond(embed=embed)
 
-    # @discord.application_command(name='approve', description="Approves a draft on the Wiki")
-    # @commands.has_role(843007895573889024)
-    # @discord.option("name", str, description="Author of the draft", required=True)
-    # @discord.option("title", str, description="Title of the draft", required=True)
-    # @discord.option("categories", str, description="Categories to add to the draft. Wrap in quotes and separate "
-    #                                                "with commas", required=False)
     async def approve(self, user, name, categories):
         datetime_object = datetime.datetime.now()
         print(f"Command /approve {user} {name} run at {str(datetime_object)}")
@@ -161,11 +153,7 @@ class DraftBot(commands.Cog):
         print(f"Successfully moved page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}> to page " +
               f"<https://2b2t.miraheze.org/wiki/{name}>")
 
-    # @discord.application_command(name='reject', description="Rejects a draft on the Wiki")
-    # @commands.has_role(843007895573889024)
-    # @discord.option("name", str, description="Author of the draft", required=True)
-    # @discord.option("title", str, description="Title of the draft", required=True)
-    # @discord.option("summary", str, description="Reason for rejection, used for the edit summary", required=False)
+    
     async def reject(self, user, name, summary):
         datetime_object = datetime.datetime.now()
         print(f"Command /reject {user} {name} {summary} run at {str(datetime_object)}")
@@ -179,25 +167,40 @@ class DraftBot(commands.Cog):
         name = name.replace(" ", "_")
         print(f"Successfully rejected page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}>")
 
-    @commands.slash_command(name='list', description="Provides a list of all pending drafts")
-    async def list(self, ctx:discord.ApplicationContext):
-        await ctx.response.defer()
+    @discord.slash_command(name='list', description="Provides a list of all pending drafts")
+    async def list(self, ctx: discord.ApplicationContext):
+        await ctx.defer()
         master_list = []
         pages = []
         master_list.append(pages)
         counter = 0
-        for page in self.draft_dict:
+        
+        drafts = self.db.get_all_drafts()
+        for page, draft in drafts.items():
             name = page[page.find('/', page.find('/') + 1) + 1:]
             user = page[page.find(':') + 1:page.find('/')]
-            user_params = {"action": "query", "list": "users", "ususers": page[page.find(':') + 1:page.find('/')],
-                           "format": "json"}
+            
+            user_params = {
+                "action": "query",
+                "list": "users",
+                "ususers": user,
+                "format": "json"
+            }
             user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
             user_json = user_request.json()
             user_id = str(user_json['query']['users'][0]['userid'])
-            embed = discord.Embed(title='Draft: ' + name, url=self.draft_dict[page],
-                                  color=discord.Color.from_rgb(36, 255, 0))
-            embed.set_author(name=user, url="https://2b2t.miraheze.org/wiki/User:" + user.replace(" ", "_"),
-                             icon_url="https://static.miraheze.org/2b2twiki/avatars/2b2twiki_" + user_id + "_l.png")
+            
+            embed = discord.Embed(
+                title='Draft: ' + name,
+                url=draft.url,
+                color=discord.Color.from_rgb(36, 255, 0)
+            )
+            embed.set_author(
+                name=user,
+                url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}",
+                icon_url=f"https://static.miraheze.org/2b2twiki/avatars/2b2twiki_{user_id}_l.png"
+            )
+            
             if len(master_list[counter]) < 10:
                 master_list[counter].append(embed)
             else:
@@ -205,18 +208,21 @@ class DraftBot(commands.Cog):
                 new_list = []
                 master_list.append(new_list)
                 master_list[counter].append(embed)
+                
         for page_list in master_list:
-            await ctx.followup.send(embeds=page_list)
+            await ctx.respond(embeds=page_list)
 
-    @commands.slash_command(name='debug', description='Intended for bot developers only')
+    @discord.slash_command(name='debug', description='Intended for bot developers only')
     @commands.has_role(1159901879417974795)
     async def debug(self, ctx: discord.ApplicationContext):
-        await ctx.response.defer(ephemeral=True)
+        await ctx.defer(ephemeral=True)
         master_list = []
         pages = []
         master_list.append(pages)
         counter = 0
-        for page in self.draft_dict:
+        
+        drafts = self.db.get_all_drafts()
+        for page in drafts:
             embed = discord.Embed(title=page)
             if len(master_list[counter]) < 10:
                 master_list[counter].append(embed)
@@ -225,8 +231,9 @@ class DraftBot(commands.Cog):
                 new_list = []
                 master_list.append(new_list)
                 master_list[counter].append(embed)
+                
         for page_list in master_list:
-            await ctx.followup.send(embeds=page_list, ephemeral=True)
+            await ctx.respond(embeds=page_list, ephemeral=True)
 
 
 def setup(bot: commands.Bot):

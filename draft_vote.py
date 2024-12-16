@@ -95,23 +95,21 @@ class ReviewModal(discord.ui.Modal):
     """Modal for entering review comments."""
 
     def __init__(self, is_approval: bool) -> None:
-        super().__init__(
-            title="Draft Review" if is_approval else "Draft Rejection",
-            timeout=None
-        )
+        title = "Draft Review" if is_approval else "Draft Rejection"
+        super().__init__(title=title)
 
-        self.add_item(
-            discord.ui.InputText(
-                label="Categories" if is_approval else "Rejection Reason",
-                placeholder=("Enter categories separated by commas" if is_approval
-                             else "Enter reason for rejection"),
-                style=discord.InputTextStyle.paragraph
-            )
+        self.input = discord.ui.TextInput(
+            label="Categories" if is_approval else "Rejection Reason",
+            placeholder=("Enter categories separated by commas" if is_approval
+                         else "Enter reason for rejection"),
+            style=discord.TextStyle.paragraph,
+            required=True
         )
+        self.add_item(self.input)
         self.result = None
 
     async def callback(self, interaction: discord.Interaction):
-        self.result = self.children[0].value
+        self.result = self.input.value
         await interaction.response.defer()
 
 
@@ -121,7 +119,7 @@ class DraftVote(commands.Cog):
         db_path = os.getenv('DRAFT_DB_PATH', 'drafts.db')
         self.db = DraftDatabase(db_path)
 
-    @commands.slash_command(
+    @discord.slash_command(
         name="vote",
         description="Start a vote on a draft"
     )
@@ -131,8 +129,8 @@ class DraftVote(commands.Cog):
             ctx: discord.ApplicationContext,
             author: str,
             draft_name: str,
-            required_votes: int = 3,
-            duration: float = 24.0
+            required_votes: Optional[int] = 3,
+            duration: Optional[float] = 24.0
     ):
         """
         Start a vote on a draft
@@ -183,7 +181,7 @@ class DraftVote(commands.Cog):
 
         # Handle vote result
         modal = ReviewModal(is_approval=view.result)
-        await ctx.send_modal(modal)
+        await ctx.interaction.response.send_modal(modal)
         await modal.wait()
 
         if view.result:  # Approved
