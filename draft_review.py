@@ -17,6 +17,17 @@ good_url = re.compile('.+Drafts/.+')
 
 threads = set()
 
+def get_user_id(username: str) -> str:
+    """Get user ID from MediaWiki API."""
+    user_params = {
+        "action": "query",
+        "list": "users",
+        "ususers": username,
+        "format": "json"
+    }
+    user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
+    user_json = user_request.json()
+    return str(user_json['query']['users'][0]['userid'])
 
 def populate_db(db: DraftDatabase):
     """Populate the database with drafts from the wiki API."""
@@ -37,11 +48,11 @@ def populate_db(db: DraftDatabase):
     try:
         print("=== DEBUG: Making API request ===")
         request = requests.get(url, params=params, headers=headers)
-        request.raise_for_status()  # This will raise an HTTPError for bad status codes
+        request.raise_for_status()
         
         print(f"=== DEBUG: API Response Status: {request.status_code} ===")
         print(f"=== DEBUG: API Response Headers: {dict(request.headers)} ===")
-        print(f"=== DEBUG: API Response Content: {request.text[:200]}... ===")  # Print first 200 chars
+        print(f"=== DEBUG: API Response Content: {request.text[:200]}... ===")
         
         json_data = request.json()
         
@@ -58,6 +69,17 @@ def populate_db(db: DraftDatabase):
             title = page['title']
             link = f"https://2b2t.miraheze.org/wiki/{title.replace(' ', '_')}"
             db.add_draft(title, link)
+            
+            # Extract username from title and update user cache if needed
+            username = title[title.find(':') + 1:title.find('/')]
+            cache_age = db.get_user_cache_age(username)
+            if cache_age is None or cache_age > 86400:  # Cache for 24 hours
+                try:
+                    user_id = get_user_id(username)
+                    db.add_user(username, user_id)
+                    print(f"Updated user cache for {username}")
+                except Exception as e:
+                    print(f"Failed to get user ID for {username}: {e}")
             
     except requests.exceptions.RequestException as e:
         print(f"Request error in populate_db: {str(e)}")
@@ -99,16 +121,6 @@ class DraftBot(commands.Cog):
                     page_move.fix_url(page, user, name)
                     continue
 
-                user_params = {
-                    "action": "query",
-                    "list": "users",
-                    "ususers": user,
-                    "format": "json"
-                }
-                user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
-                user_json = user_request.json()
-                user_id = str(user_json['query']['users'][0]['userid'])
-
                 threads.update(channel.threads)
                 async for thread in channel.archived_threads():
                     threads.add(thread)
@@ -125,11 +137,20 @@ class DraftBot(commands.Cog):
                         url=draft_url,
                         color=discord.Color.from_rgb(36, 255, 0)
                     )
-                    embed.set_author(
-                        name=user,
-                        url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}",
-                        icon_url=f"https://static.miraheze.org/2b2twiki/avatars/2b2twiki_{user_id}_l.png"
-                    )
+                    
+                    # Get user ID from cache
+                    user_data = self.db.get_user(user)
+                    if user_data:
+                        embed.set_author(
+                            name=user,
+                            url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}",
+                            icon_url=f"https://static.miraheze.org/2b2twiki/avatars/2b2twiki_{user_data.user_id}_l.png"
+                        )
+                    else:
+                        embed.set_author(
+                            name=user,
+                            url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}"
+                        )
 
                     draft_message = await channel.send(embed=embed)
                     new_thread = await channel.create_thread(
@@ -197,28 +218,11 @@ class DraftBot(commands.Cog):
 
     @discord.slash_command(name='list', description="Provides a list of all pending drafts")
     async def list(self, ctx: discord.ApplicationContext):
-        # Respond immediately to avoid interaction timeout
-        await ctx.respond("Fetching drafts...", ephemeral=True)
-
         try:
             drafts = self.db.get_all_drafts()
             if not drafts:
-                await ctx.followup.send("No drafts found.")
+                await ctx.respond("No drafts found.")
                 return
-
-            # Pre-fetch all user data to avoid multiple API calls
-            users = set(page[page.find(':') + 1:page.find('/')] for page in drafts.keys())
-            user_data = {}
-            user_params = {
-                "action": "query",
-                "list": "users",
-                "ususers": "|".join(users),
-                "format": "json"
-            }
-            user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
-            user_json = user_request.json()
-            for user_info in user_json['query']['users']:
-                user_data[user_info['name']] = str(user_info['userid'])
 
             # Create embeds
             master_list = []
@@ -226,22 +230,30 @@ class DraftBot(commands.Cog):
             master_list.append(pages)
             counter = 0
 
+            # Create embeds
             for page, draft in drafts.items():
                 name = page[page.find('/', page.find('/') + 1) + 1:]
                 user = page[page.find(':') + 1:page.find('/')]
-
-                user_id = user_data.get(user, "0")  # Use cached user data
 
                 embed = discord.Embed(
                     title='Draft: ' + name,
                     url=draft.url,
                     color=discord.Color.from_rgb(36, 255, 0)
                 )
-                embed.set_author(
-                    name=user,
-                    url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}",
-                    icon_url=f"https://static.miraheze.org/2b2twiki/avatars/2b2twiki_{user_id}_l.png"
-                )
+                
+                # Get user ID from cache
+                user_data = self.db.get_user(user)
+                if user_data:
+                    embed.set_author(
+                        name=user,
+                        url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}",
+                        icon_url=f"https://static.miraheze.org/2b2twiki/avatars/2b2twiki_{user_data.user_id}_l.png"
+                    )
+                else:
+                    embed.set_author(
+                        name=user,
+                        url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}"
+                    )
 
                 if len(master_list[counter]) < 10:
                     master_list[counter].append(embed)
@@ -251,13 +263,14 @@ class DraftBot(commands.Cog):
                     master_list.append(new_list)
                     master_list[counter].append(embed)
 
-            # Send responses
-            for page_list in master_list:
+            # Send all embeds in a single response
+            await ctx.respond(embeds=master_list[0])
+            for page_list in master_list[1:]:
                 if page_list:  # Only send if there are embeds
-                    await ctx.followup.send(embeds=page_list, ephemeral=False)  # Make sure followup messages are public
+                    await ctx.followup.send(embeds=page_list)
 
         except Exception as e:
-            await ctx.followup.send(f"Error listing drafts: {str(e)}")
+            await ctx.respond(f"Error listing drafts: {str(e)}")
 
     @discord.slash_command(name='debug', description='Intended for bot developers only')
     @commands.has_role(1159901879417974795)
@@ -293,7 +306,7 @@ class DraftBot(commands.Cog):
                 await ctx.respond(f"Database file not found at: {self.db.db_path}", ephemeral=True)
                 return
                 
-            # Get all drafts
+            # Get all drafts and users
             drafts = self.db.get_all_drafts()
             
             # Create debug info embed
@@ -326,6 +339,24 @@ class DraftBot(commands.Cog):
                     value=sample_text or "None",
                     inline=False
                 )
+            
+            # Add user cache info
+            users = set()
+            for title in drafts.keys():
+                username = title[title.find(':') + 1:title.find('/')]
+                users.add(username)
+            
+            cached_users = []
+            for username in users:
+                user_data = self.db.get_user(username)
+                if user_data:
+                    cached_users.append(username)
+            
+            embed.add_field(
+                name="User Cache Status",
+                value=f"Cached {len(cached_users)} out of {len(users)} users",
+                inline=False
+            )
             
             await ctx.respond(embed=embed, ephemeral=True)
             
