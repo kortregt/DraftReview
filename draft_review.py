@@ -35,12 +35,13 @@ def populate_db(db: DraftDatabase):
     url = 'https://2b2t.miraheze.org/w/api.php'
     
     try:
+        print("=== DEBUG: Making API request ===")
         request = requests.get(url, params=params, headers=headers)
         request.raise_for_status()  # This will raise an HTTPError for bad status codes
         
-        # Print response for debugging
-        print(f"API Response Status: {request.status_code}")
-        print(f"API Response Content: {request.text[:200]}...")  # Print first 200 chars
+        print(f"=== DEBUG: API Response Status: {request.status_code} ===")
+        print(f"=== DEBUG: API Response Headers: {dict(request.headers)} ===")
+        print(f"=== DEBUG: API Response Content: {request.text[:200]}... ===")  # Print first 200 chars
         
         json_data = request.json()
         
@@ -196,17 +197,13 @@ class DraftBot(commands.Cog):
 
     @discord.slash_command(name='list', description="Provides a list of all pending drafts")
     async def list(self, ctx: discord.ApplicationContext):
-        await ctx.defer()
+        # Respond immediately to avoid interaction timeout
+        await ctx.respond("Fetching drafts...", ephemeral=True)
 
         try:
-            master_list = []
-            pages = []
-            master_list.append(pages)
-            counter = 0
-
             drafts = self.db.get_all_drafts()
             if not drafts:
-                await ctx.respond("No drafts found.")
+                await ctx.followup.send("No drafts found.")
                 return
 
             # Pre-fetch all user data to avoid multiple API calls
@@ -224,6 +221,11 @@ class DraftBot(commands.Cog):
                 user_data[user_info['name']] = str(user_info['userid'])
 
             # Create embeds
+            master_list = []
+            pages = []
+            master_list.append(pages)
+            counter = 0
+
             for page, draft in drafts.items():
                 name = page[page.find('/', page.find('/') + 1) + 1:]
                 user = page[page.find(':') + 1:page.find('/')]
@@ -250,17 +252,12 @@ class DraftBot(commands.Cog):
                     master_list[counter].append(embed)
 
             # Send responses
-            first = True
             for page_list in master_list:
                 if page_list:  # Only send if there are embeds
-                    if first:
-                        await ctx.respond(embeds=page_list)
-                        first = False
-                    else:
-                        await ctx.followup.send(embeds=page_list)
+                    await ctx.followup.send(embeds=page_list, ephemeral=False)  # Make sure followup messages are public
 
         except Exception as e:
-            await ctx.respond(f"Error listing drafts: {str(e)}")
+            await ctx.followup.send(f"Error listing drafts: {str(e)}")
 
     @discord.slash_command(name='debug', description='Intended for bot developers only')
     @commands.has_role(1159901879417974795)
