@@ -153,7 +153,6 @@ class DraftBot(commands.Cog):
         print(f"Successfully moved page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}> to page " +
               f"<https://2b2t.miraheze.org/wiki/{name}>")
 
-    
     async def reject(self, user, name, summary):
         datetime_object = datetime.datetime.now()
         print(f"Command /reject {user} {name} {summary} run at {str(datetime_object)}")
@@ -236,6 +235,5 @@ class DraftBot(commands.Cog):
             await ctx.respond(embeds=page_list, ephemeral=True)
 
 
-def setup(bot):
-    print("Setting up DraftReview cog")  # Debug print
+def setup(bot: commands.Bot):
     bot.add_cog(DraftBot(bot))
