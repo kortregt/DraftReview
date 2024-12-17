@@ -116,7 +116,7 @@ class ReviewModal(discord.ui.Modal):
 class DraftVote(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        db_path = os.getenv('DRAFT_DB_PATH', 'drafts.db')
+        db_path = os.getenv('DATABASE_PATH', 'drafts.db')
         self.db = DraftDatabase(db_path)
 
     @discord.slash_command(
@@ -147,61 +147,64 @@ class DraftVote(commands.Cog):
             Duration of vote in hours (default: 24)
         """
         await ctx.defer()
-
-        # Verify draft exists
-        draft_title = f"User:{author}/Drafts/{draft_name}"
-        draft = self.db.get_draft(draft_title)
-        if not draft:
-            await ctx.respond(
-                f"Error: Draft '{draft_name}' by {author} not found.",
-                ephemeral=True
-            )
-            return
-
-        # Create and start vote
-        view = VoteView(
-            author=author,
-            draft_name=draft_name,
-            required_votes=required_votes,
-            timeout=duration * 3600
-        )
-
-        embed = view._create_status_embed()
-        message = await ctx.respond(embed=embed, view=view)
-
-        log_vote(f"Vote started for {draft_name} by {author}")
-
-        # Wait for voting to complete
         try:
-            await view.wait()
-        except asyncio.TimeoutError:
-            log_vote(f"Vote timed out for {draft_name} by {author}")
-            await message.edit(content="Vote has timed out.", view=None)
-            return
+            # Verify draft exists
+            draft_title = f"User:{author}/Drafts/{draft_name}"
+            draft = self.db.get_draft(draft_title)
+            if not draft:
+                await ctx.respond(
+                    f"Error: Draft '{draft_name}' by {author} not found.",
+                    ephemeral=True
+                )
+                return
 
-        # Handle vote result
-        modal = ReviewModal(is_approval=view.result)
-        await ctx.interaction.response.send_modal(modal)
-        await modal.wait()
-
-        if view.result:  # Approved
-            await self.bot.get_cog('DraftBot').approve(author, draft_name, modal.result)
-            result_embed = discord.Embed(
-                title="Draft Approved",
-                description=f"{draft_name} by {author} has been approved.",
-                color=discord.Color.green()
-            )
-        else:  # Rejected
-            await self.bot.get_cog('DraftBot').reject(author, draft_name, modal.result)
-            result_embed = discord.Embed(
-                title="Draft Rejected",
-                description=f"{draft_name} by {author} has been rejected.",
-                color=discord.Color.red()
+            # Create and start vote
+            view = VoteView(
+                author=author,
+                draft_name=draft_name,
+                required_votes=required_votes,
+                timeout=duration * 3600
             )
 
-        await ctx.send(embed=result_embed)
-        log_vote(f"Vote completed for {draft_name} by {author}: {'Approved' if view.result else 'Rejected'}")
+            embed = view._create_status_embed()
+            message = await ctx.followup.send(embed=embed, view=view)
 
+            log_vote(f"Vote started for {draft_name} by {author}")
+
+            # Wait for voting to complete
+            try:
+                await view.wait()
+            except asyncio.TimeoutError:
+                log_vote(f"Vote timed out for {draft_name} by {author}")
+                await message.edit(content="Vote has timed out.", view=None)
+                return
+
+            # Handle vote result
+            modal = ReviewModal(is_approval=view.result)
+            await ctx.interaction.response.send_modal(modal)
+            await modal.wait()
+
+            if view.result:  # Approved
+                await self.bot.get_cog('DraftBot').approve(author, draft_name, modal.result)
+                result_embed = discord.Embed(
+                    title="Draft Approved",
+                    description=f"{draft_name} by {author} has been approved.",
+                    color=discord.Color.green()
+                )
+            else:  # Rejected
+                await self.bot.get_cog('DraftBot').reject(author, draft_name, modal.result)
+                result_embed = discord.Embed(
+                    title="Draft Rejected",
+                    description=f"{draft_name} by {author} has been rejected.",
+                    color=discord.Color.red()
+                )
+
+            await ctx.send(embed=result_embed)
+            log_vote(f"Vote completed for {draft_name} by {author}: {'Approved' if view.result else 'Rejected'}")
+
+        except Exception as e:
+            await ctx.followup.send(f"An error occurred: {str(e)}", ephemeral=True)
+            logger.error(f"Error in vote command: {str(e)}", exc_info=True)
 
 def setup(bot):
     print("Setting up DraftVote cog")  # Debug print
