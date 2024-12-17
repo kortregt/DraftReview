@@ -38,17 +38,16 @@ async def sync_commands():
             
             # Get the guild
             guild_id = 697848129185120256
-            guild = await bot.fetch_guild(guild_id)
             
-            if not guild:
-                print(f"Error: Could not find guild with ID {guild_id}")
-                sys.exit(1)
-                
-            print(f"Syncing commands to guild: {guild.name}")
+            print(f"Syncing commands to guild ID: {guild_id}")
             
-            # Sync commands
-            bot.tree.copy_global_to(guild=guild)
-            await bot.tree.sync(guild=guild)
+            # Sync commands specifically to this guild
+            await bot.sync_commands(
+                guild_ids=[guild_id],
+                force=True,  # Force sync regardless of command state
+                register_guild_commands=True,
+                delete_existing=True  # Clean up any old commands
+            )
             
             print("Commands synced successfully!")
             
