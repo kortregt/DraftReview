@@ -5,6 +5,8 @@ import datetime
 import re
 import os
 from os import path
+import logging
+import traceback
 
 import draft_deny
 import draft_move
@@ -12,6 +14,10 @@ import page_move
 import clean_redirects
 import add_category
 from draft_database import DraftDatabase
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 good_url = re.compile('.+Drafts/.+')
 
@@ -276,7 +282,7 @@ class DraftBot(commands.Cog):
     async def list(self, ctx: discord.ApplicationContext):
         try:
             # Defer the response immediately
-            await ctx.defer()
+            await ctx.response.defer()
             
             drafts = self.db.get_all_drafts()
             if not drafts:
@@ -325,12 +331,11 @@ class DraftBot(commands.Cog):
             # Send all embeds using followup messages
             for i, page_list in enumerate(master_list):
                 if page_list:  # Only send if there are embeds
-                    if i == 0:
-                        await ctx.followup.send(embeds=page_list)
-                    else:
-                        await ctx.followup.send(embeds=page_list)
+                    await ctx.followup.send(embeds=page_list)
 
         except Exception as e:
+            logger.error(f"Error in list command: {str(e)}")
+            logger.error(traceback.format_exc())
             await ctx.followup.send(f"Error listing drafts: {str(e)}")
 
     @discord.slash_command(name='debug', description='Intended for bot developers only')
