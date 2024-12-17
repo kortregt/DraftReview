@@ -28,6 +28,36 @@ class SyncBot(commands.Bot):
             print(f"Error loading extensions: {e}")
             raise
 
+    async def on_ready(self):
+        """Runs when the bot is fully connected to Discord."""
+        print(f"Connected as {self.user} (ID: {self.user.id})")
+        
+        # Get the guild
+        guild_id = 697848129185120256
+        guild = self.get_guild(guild_id)
+        
+        if guild:
+            print(f"Found guild: {guild.name} ({guild_id})")
+            try:
+                print("\nSyncing commands...")
+                commands = await self.sync_commands(guild_ids=[guild_id])
+                if commands:
+                    print("\nSuccessfully synced commands:")
+                    for cmd in commands:
+                        print(f"- {cmd.name}: {cmd.description}")
+                else:
+                    print("No commands were synced. Check if commands are properly defined in cogs.")
+            except discord.errors.Forbidden as e:
+                print(f"ERROR: Bot lacks permissions to sync commands: {e}")
+            except Exception as e:
+                print(f"ERROR during command sync: {e}")
+        else:
+            print(f"Could not find guild with ID: {guild_id}")
+            print("Available guilds:", [g.name for g in self.guilds])
+        
+        # Close the bot after syncing
+        await self.close()
+
 async def sync_commands():
     """Sync slash commands to the guild."""
     try:
@@ -42,35 +72,9 @@ async def sync_commands():
         print("Starting command sync...")
         
         # Create and set up bot
-        async with SyncBot() as bot:
-            # Login but don't start processing events
-            print("Logging in...")
-            await bot.login(token)
-            
-            # Get the guild
-            guild_id = 697848129185120256
-            guild = bot.get_guild(guild_id)
-            
-            if guild:
-                print(f"Found guild: {guild.name} ({guild_id})")
-            else:
-                print(f"Could not find guild with ID: {guild_id}")
-                print("Available guilds:", [g.name for g in bot.guilds])
-            
-            print("\nSyncing commands...")
-            try:
-                commands = await bot.sync_commands(guild_ids=[guild_id])
-                if commands:
-                    print("\nSuccessfully synced commands:")
-                    for cmd in commands:
-                        print(f"- {cmd.name}: {cmd.description}")
-                else:
-                    print("No commands were synced. Check if commands are properly defined in cogs.")
-                
-            except discord.errors.Forbidden as e:
-                print(f"ERROR: Bot lacks permissions to sync commands: {e}")
-            except Exception as e:
-                print(f"ERROR during command sync: {e}")
+        bot = SyncBot()
+        async with bot:
+            await bot.start(token)
             
     except Exception as e:
         print(f"Fatal error during setup: {str(e)}")
