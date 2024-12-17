@@ -33,17 +33,40 @@ def get_user_ids(usernames: list[str]) -> dict[str, str]:
     """Get multiple user IDs in a single API call."""
     if not usernames:
         return {}
-        
-    user_params = {
-        "action": "query",
-        "list": "users",
-        "ususers": "|".join(usernames),
-        "format": "json"
-    }
-    user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
-    user_json = user_request.json()
-    return {user_info['name']: str(user_info['userid']) 
-            for user_info in user_json['query']['users']}
+    
+    # Split usernames into chunks of 50 to avoid URL length limits
+    chunk_size = 50
+    user_ids = {}
+    
+    for i in range(0, len(usernames), chunk_size):
+        chunk = usernames[i:i + chunk_size]
+        user_params = {
+            "action": "query",
+            "list": "users",
+            "ususers": "|".join(chunk),
+            "format": "json"
+        }
+        try:
+            print(f"=== Fetching user IDs for chunk {i//chunk_size + 1} ===")
+            user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
+            user_request.raise_for_status()
+            user_json = user_request.json()
+            
+            if 'query' in user_json and 'users' in user_json['query']:
+                for user_info in user_json['query']['users']:
+                    if 'userid' in user_info:
+                        user_ids[user_info['name']] = str(user_info['userid'])
+            else:
+                print(f"Unexpected API response structure: {user_json}")
+                
+        except requests.RequestException as e:
+            print(f"API request failed for chunk {i//chunk_size + 1}: {e}")
+            if hasattr(e, 'response'):
+                print(f"Response content: {e.response.text}")
+        except Exception as e:
+            print(f"Error processing chunk {i//chunk_size + 1}: {e}")
+    
+    return user_ids
 
 def populate_db(db: DraftDatabase):
     """Populate the database with drafts from the wiki API."""
@@ -217,7 +240,6 @@ class DraftBot(commands.Cog):
 
     @discord.slash_command(name='help', description="Displays and explains this bot's functions")
     async def help(self, ctx: discord.ApplicationContext):
-        await ctx.defer()
         embed = discord.Embed(title="Commands",
                               description="Note: for parameters containing spaces, surround the parameters in quotes, or substitute spaces with underscores.",
                               color=0x24ff00)
@@ -315,7 +337,6 @@ class DraftBot(commands.Cog):
     @discord.slash_command(name='debug', description='Intended for bot developers only')
     @commands.has_role(1159901879417974795)
     async def debug(self, ctx: discord.ApplicationContext):
-        await ctx.defer(ephemeral=True)
         master_list = []
         pages = []
         master_list.append(pages)
@@ -332,14 +353,14 @@ class DraftBot(commands.Cog):
                 master_list.append(new_list)
                 master_list[counter].append(embed)
                 
-        for page_list in master_list:
-            await ctx.respond(embeds=page_list, ephemeral=True)
+        await ctx.respond(embeds=master_list[0], ephemeral=True)
+        for page_list in master_list[1:]:
+            if page_list:
+                await ctx.followup.send(embeds=page_list, ephemeral=True)
     
     @discord.slash_command(name='dbcheck', description='Check database status')
     @commands.has_role(1159901879417974795)  # Bot Wrangler role
     async def dbcheck(self, ctx: discord.ApplicationContext):
-        await ctx.defer(ephemeral=True)
-        
         try:
             # Check if database file exists
             if not path.exists(self.db.db_path):
