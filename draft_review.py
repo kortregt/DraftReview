@@ -20,6 +20,10 @@ threads = set()
 
 def populate_db(db: DraftDatabase):
     """Populate the database with drafts from the wiki API."""
+    headers = {
+        'User-Agent': '2b2tWikiBot/2.0 (Miraheze; 2b2t Wiki) Draft Review Bot'
+    }
+    
     params = {
         "action": "query",
         "list": "categorymembers",
@@ -27,17 +31,17 @@ def populate_db(db: DraftDatabase):
         "cmlimit": "100",
         "format": "json"
     }
-    url = 'https://2b2t.miraheze.org/'
 
-    request = requests.get(url + "w/api.php", params=params)
+    url = 'https://2b2t.miraheze.org/w/api.php'
+    
+    request = requests.get(url, params=params, headers=headers)
     request.raise_for_status()
     json_data = request.json()
 
     pages = json_data['query']['categorymembers']
     for page in pages:
         title = page['title']
-        link = url + "wiki/" + page['title']
-        link = link.replace(" ", "_")
+        link = f"https://2b2t.miraheze.org/wiki/{title.replace(' ', '_')}"
         db.add_draft(title, link)
 
 
@@ -51,68 +55,72 @@ class DraftBot(commands.Cog):
     def cog_unload(self):
         self.fetch_draft.cancel()
 
-    @tasks.loop(seconds=60)
-    async def fetch_draft(self, *args):
-        print("\n=== Running fetch_draft ===")
-        channel = self.bot.get_channel(1150122572294410441)  # draft-menders channel
-
-        print("Getting current drafts from database...")
-        old_drafts = set(self.db.get_all_drafts().keys())
-        print(f"Found {len(old_drafts)} existing drafts")
-        
-        try:
-            print("Attempting to populate database from wiki...")
-            populate_db(self.db)
-            new_drafts = set(self.db.get_all_drafts().keys())
-            print(f"Database now has {len(new_drafts)} drafts")
+        @tasks.loop(seconds=60)
+        async def fetch_draft(self, *args):
+            channel = self.bot.get_channel(1150122572294410441)  # channel ID goes here (draft-menders)
             
-            new_pages = [x for x in new_drafts if x not in old_drafts]
-            print(f"Found {len(new_pages)} new drafts")
+            old_drafts = set(self.db.get_all_drafts().keys())
+            try:
+                populate_db(self.db)
+                new_drafts = set(self.db.get_all_drafts().keys())
+                new_pages = [x for x in new_drafts if x not in old_drafts]
 
-            for page in new_pages:
-                print(f"Processing new draft: {page}")
-                name = page[page.find('/', page.find('/') + 1) + 1:]
-                user = page[page.find(':') + 1:page.find('/')]
-                if re.fullmatch(good_url, page) is None:
-                    print(f"Invalid URL format for {page}, fixing...")
-                    page_move.fix_url(page, user, name)
-                    continue
+                for page in new_pages:
+                    name = page[page.find('/', page.find('/') + 1) + 1:]
+                    user = page[page.find(':') + 1:page.find('/')]
+                    if re.fullmatch(good_url, page) is None:
+                        page_move.fix_url(page, user, name)
+                        continue
 
-                print(f"Fetching user info for {user}")
-                user_params = {
-                    "action": "query",
-                    "list": "users",
-                    "ususers": user,
-                    "format": "json"
-                }
-                
-                user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
-                user_json = user_request.json()
-                user_id = str(user_json['query']['users'][0]['userid'])
+                    user_params = {
+                        "action": "query",
+                        "list": "users",
+                        "ususers": user,
+                        "format": "json"
+                    }
+                    user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
+                    user_json = user_request.json()
+                    user_id = str(user_json['query']['users'][0]['userid'])
 
-                threads.update(channel.threads)
-                async for thread in channel.archived_threads():
-                    threads.add(thread)
-                thread = discord.utils.get(threads, name='Draft: ' + name)
+                    threads.update(channel.threads)
+                    async for thread in channel.archived_threads():
+                        threads.add(thread)
+                    thread = discord.utils.get(threads, name='Draft: ' + name)
 
-                draft_url = self.db.get_draft(page).url if self.db.get_draft(page) else None
-                if not draft_url:
-                    print(f"No URL found for draft {page}")
-                    continue
-                    
-                if thread is None:
-                    print(f"Creating new thread for {page}")
-                    # Rest of your thread creation code...
-                elif thread.archived:
-                    print(f"Unarchiving thread for {page}")
-                    await thread.unarchive()
-                else:
-                    print(f"Thread already exists for {page}")
+                    draft_url = self.db.get_draft(page).url if self.db.get_draft(page) else None
+                    if not draft_url:
+                        continue
+                        
+                    # if no thread for this draft is found:
+                    if thread is None:
+                        embed = discord.Embed(
+                            title='Draft: ' + name,
+                            url=draft_url,
+                            color=discord.Color.from_rgb(36, 255, 0)
+                        )
+                        embed.set_author(
+                            name=user,
+                            url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}",
+                            icon_url=f"https://static.miraheze.org/2b2twiki/avatars/2b2twiki_{user_id}_l.png"
+                        )
 
-        except Exception as e:
-            print(f"Error in fetch_draft: {e}")
-            import traceback
-            traceback.print_exc()
+                        draft_message = await channel.send(embed=embed)
+                        new_thread = await channel.create_thread(
+                            name='Draft: ' + name,
+                            message=draft_message,
+                            reason="New draft"
+                        )
+                        threads.add(new_thread)
+                        print(f"Found Draft:{user}/{name} at {datetime.datetime.now()}, new thread opened")
+                    # else if a thread is found but it is closed:
+                    elif thread.archived:
+                        await thread.unarchive()
+                        print(f"Found Draft:{user}/{name} at {datetime.datetime.now()}, opened existing thread")
+                    else:
+                        print(f"Found Draft:{user}/{name} at {datetime.datetime.now()}, thread already exists")
+
+            except requests.HTTPError as e:
+                print(e)
 
     @fetch_draft.before_loop
     async def before_fetch_draft(self):
