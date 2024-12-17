@@ -7,6 +7,20 @@ import sys
 from os import environ
 from dotenv import load_dotenv
 
+class SyncBot(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.message_content = True
+        super().__init__(
+            command_prefix="!",
+            intents=intents
+        )
+    
+    async def setup_hook(self):
+        """Setup hook that runs when the bot starts."""
+        await self.load_extension("draft_review")
+        await self.load_extension("draft_vote")
+
 async def sync_commands():
     """Sync slash commands to the guild."""
     try:
@@ -16,14 +30,8 @@ async def sync_commands():
         # Get token from environment
         token = environ['BotToken']
         
-        # Initialize bot with all intents
-        intents = discord.Intents.default()
-        intents.message_content = True
-        bot = commands.Bot(command_prefix="!", intents=intents)
-        
-        # Load cogs
-        await bot.load_extension('draft_review')
-        await bot.load_extension('draft_vote')
+        # Create bot instance
+        bot = SyncBot()
         
         # Login but don't start processing events
         await bot.login(token)
