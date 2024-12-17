@@ -3,12 +3,11 @@ import discord
 from discord.ext import commands
 import asyncio
 import os
-import sys
-from os import environ
 from dotenv import load_dotenv
 
 class SyncBot(commands.Bot):
     def __init__(self):
+        print("Initializing bot...")
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(
@@ -19,8 +18,15 @@ class SyncBot(commands.Bot):
     
     async def setup_hook(self):
         """Setup hook that runs when the bot starts."""
-        await self.load_extension("draft_review")
-        await self.load_extension("draft_vote")
+        print("Loading extensions...")
+        try:
+            await self.load_extension("draft_review")
+            print("✓ Loaded draft_review")
+            await self.load_extension("draft_vote")
+            print("✓ Loaded draft_vote")
+        except Exception as e:
+            print(f"Error loading extensions: {e}")
+            raise
 
 async def sync_commands():
     """Sync slash commands to the guild."""
@@ -29,35 +35,47 @@ async def sync_commands():
         load_dotenv()
         
         # Get token from environment
-        token = environ['BotToken']
+        token = os.environ.get('BotToken')
+        if not token:
+            raise ValueError("BotToken environment variable not set")
+        
+        print("Starting command sync...")
         
         # Create and set up bot
         async with SyncBot() as bot:
             # Login but don't start processing events
+            print("Logging in...")
             await bot.login(token)
             
             # Get the guild
             guild_id = 697848129185120256
+            guild = bot.get_guild(guild_id)
             
-            print(f"Syncing commands to guild ID: {guild_id}")
+            if guild:
+                print(f"Found guild: {guild.name} ({guild_id})")
+            else:
+                print(f"Could not find guild with ID: {guild_id}")
+                print("Available guilds:", [g.name for g in bot.guilds])
             
-            # Sync commands specifically to this guild
-            await bot.sync_commands(
-                guild_ids=[guild_id],
-                force=True,  # Force sync regardless of command state
-                register_guild_commands=True,
-                delete_existing=True  # Clean up any old commands
-            )
+            print("\nSyncing commands...")
+            try:
+                commands = await bot.sync_commands(guild_ids=[guild_id])
+                if commands:
+                    print("\nSuccessfully synced commands:")
+                    for cmd in commands:
+                        print(f"- {cmd.name}: {cmd.description}")
+                else:
+                    print("No commands were synced. Check if commands are properly defined in cogs.")
+                
+            except discord.errors.Forbidden as e:
+                print(f"ERROR: Bot lacks permissions to sync commands: {e}")
+            except Exception as e:
+                print(f"ERROR during command sync: {e}")
             
-            print("Commands synced successfully!")
-            
-    except KeyError:
-        print("Error: BotToken environment variable not set")
-        sys.exit(1)
     except Exception as e:
-        print(f"Error: {str(e)}")
-        sys.exit(1)
+        print(f"Fatal error during setup: {str(e)}")
+        raise
 
 if __name__ == "__main__":
-    print("Starting command sync...")
+    print("=== Discord Command Sync Script ===\n")
     asyncio.run(sync_commands())
