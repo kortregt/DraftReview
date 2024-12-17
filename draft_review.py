@@ -86,13 +86,8 @@ def populate_db(db: DraftDatabase):
     url = 'https://2b2t.miraheze.org/w/api.php'
     
     try:
-        print("=== DEBUG: Making API request ===")
         request = requests.get(url, params=params, headers=headers)
         request.raise_for_status()
-        
-        print(f"=== DEBUG: API Response Status: {request.status_code} ===")
-        print(f"=== DEBUG: API Response Headers: {dict(request.headers)} ===")
-        print(f"=== DEBUG: API Response Content: {request.text[:200]}... ===")
         
         json_data = request.json()
         
@@ -246,8 +241,6 @@ class DraftBot(commands.Cog):
                               color=0x24ff00)
         embed.add_field(name="List drafts awaiting review", value="/list", inline=False)
         embed.add_field(name="Vote on a draft", value="/vote <user> <article> <duration> <auto>", inline=False)
-        # embed.add_field(name="Approve a draft", value='/approve <user> <article> <"category 1, category 2, etc.">', inline=False)
-        # embed.add_field(name="Reject a draft", value='/reject <user> <article> <"reason">', inline=False)
         await ctx.respond(embed=embed)
 
     async def approve(self, user, name, categories):
@@ -282,9 +275,12 @@ class DraftBot(commands.Cog):
     @discord.slash_command(name='list', description="Provides a list of all pending drafts")
     async def list(self, ctx: discord.ApplicationContext):
         try:
+            # Defer the response immediately
+            await ctx.defer()
+            
             drafts = self.db.get_all_drafts()
             if not drafts:
-                await ctx.respond("No drafts found.")
+                await ctx.followup.send("No drafts found.")
                 return
 
             # Create embeds
@@ -326,14 +322,16 @@ class DraftBot(commands.Cog):
                     master_list.append(new_list)
                     master_list[counter].append(embed)
 
-            # Send all embeds in a single response
-            await ctx.respond(embeds=master_list[0])
-            for page_list in master_list[1:]:
+            # Send all embeds using followup messages
+            for i, page_list in enumerate(master_list):
                 if page_list:  # Only send if there are embeds
-                    await ctx.followup.send(embeds=page_list)
+                    if i == 0:
+                        await ctx.followup.send(embeds=page_list)
+                    else:
+                        await ctx.followup.send(embeds=page_list)
 
         except Exception as e:
-            await ctx.respond(f"Error listing drafts: {str(e)}")
+            await ctx.followup.send(f"Error listing drafts: {str(e)}")
 
     @discord.slash_command(name='debug', description='Intended for bot developers only')
     @commands.has_role(1159901879417974795)
