@@ -280,10 +280,10 @@ class DraftBot(commands.Cog):
 
     @discord.slash_command(name='list', description="Provides a list of all pending drafts")
     async def list(self, ctx: discord.ApplicationContext):
+        # Defer the response immediately before any other operations
+        await ctx.response.defer()
+        
         try:
-            # Defer the response immediately
-            await ctx.response.defer()
-            
             drafts = self.db.get_all_drafts()
             if not drafts:
                 await ctx.followup.send("No drafts found.")
@@ -329,20 +329,21 @@ class DraftBot(commands.Cog):
                     master_list[counter].append(embed)
 
             # Send all embeds using followup messages
-            try:
-                for i, page_list in enumerate(master_list):
-                    if page_list:  # Only send if there are embeds
-                        try:
-                            await ctx.followup.send(embeds=page_list)
-                        except discord.NotFound:
-                            logger.error("Interaction no longer valid")
-                            break
-            except Exception as e:
-                logger.error(f"Error sending embed batch {i}: {str(e)}")
-                logger.error(traceback.format_exc())
-                break
+            for i, page_list in enumerate(master_list):
+                if page_list:  # Only send if there are embeds
+                    try:
+                        await ctx.followup.send(embeds=page_list)
+                    except discord.NotFound:
+                        # If interaction is no longer valid, log it but don't try to send error message
+                        logger.error("Interaction no longer valid")
+                        break
+                    except Exception as e:
+                        logger.error(f"Error sending embed batch {i}: {str(e)}")
+                        logger.error(traceback.format_exc())
+                        break
 
         except Exception as e:
+            # Log the error but don't try to send it through Discord
             logger.error(f"Error in list command: {str(e)}")
             logger.error(traceback.format_exc())
 
