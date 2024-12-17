@@ -34,15 +34,41 @@ def populate_db(db: DraftDatabase):
 
     url = 'https://2b2t.miraheze.org/w/api.php'
     
-    request = requests.get(url, params=params, headers=headers)
-    request.raise_for_status()
-    json_data = request.json()
+    try:
+        request = requests.get(url, params=params, headers=headers)
+        request.raise_for_status()  # This will raise an HTTPError for bad status codes
+        
+        # Print response for debugging
+        print(f"API Response Status: {request.status_code}")
+        print(f"API Response Content: {request.text[:200]}...")  # Print first 200 chars
+        
+        json_data = request.json()
+        
+        if 'query' not in json_data:
+            print(f"Error: 'query' not found in response. Full response: {json_data}")
+            return
+            
+        if 'categorymembers' not in json_data['query']:
+            print(f"Error: 'categorymembers' not found in query. Full response: {json_data}")
+            return
 
-    pages = json_data['query']['categorymembers']
-    for page in pages:
-        title = page['title']
-        link = f"https://2b2t.miraheze.org/wiki/{title.replace(' ', '_')}"
-        db.add_draft(title, link)
+        pages = json_data['query']['categorymembers']
+        for page in pages:
+            title = page['title']
+            link = f"https://2b2t.miraheze.org/wiki/{title.replace(' ', '_')}"
+            db.add_draft(title, link)
+            
+    except requests.exceptions.RequestException as e:
+        print(f"Request error in populate_db: {str(e)}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response content: {e.response.text}")
+        raise
+    except ValueError as e:
+        print(f"JSON parsing error in populate_db: {str(e)}")
+        raise
+    except Exception as e:
+        print(f"Unexpected error in populate_db: {str(e)}")
+        raise
 
 
 class DraftBot(commands.Cog):
@@ -170,7 +196,7 @@ class DraftBot(commands.Cog):
 
     @discord.slash_command(name='list', description="Provides a list of all pending drafts")
     async def list(self, ctx: discord.ApplicationContext):
-        await ctx.defer()  # Remove ephemeral flag
+        await ctx.defer()
 
         try:
             master_list = []
