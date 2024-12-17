@@ -4,23 +4,26 @@ from discord.ext import commands
 import asyncio
 import os
 import sys
+from os import environ
+from dotenv import load_dotenv
 
 async def sync_commands():
     """Sync slash commands to the guild."""
     try:
+        # Load environment variables
+        load_dotenv()
+        
         # Get token from environment
-        token = os.getenv("DISCORD_TOKEN")
-        if not token:
-            print("Error: DISCORD_TOKEN environment variable not set")
-            sys.exit(1)
-
+        token = environ['BotToken']
+        
         # Initialize bot with all intents
-        intents = discord.Intents.all()
+        intents = discord.Intents.default()
+        intents.message_content = True
         bot = commands.Bot(command_prefix="!", intents=intents)
         
         # Load cogs
-        bot.load_extension('draft_review')
-        bot.load_extension('draft_vote')
+        await bot.load_extension('draft_review')
+        await bot.load_extension('draft_vote')
         
         # Login but don't start processing events
         await bot.login(token)
@@ -41,6 +44,9 @@ async def sync_commands():
         
         print("Commands synced successfully!")
         
+    except KeyError:
+        print("Error: BotToken environment variable not set")
+        sys.exit(1)
     except Exception as e:
         print(f"Error: {str(e)}")
         sys.exit(1)
