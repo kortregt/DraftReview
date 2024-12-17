@@ -17,6 +17,10 @@ good_url = re.compile('.+Drafts/.+')
 
 threads = set()
 
+headers = {
+    'User-Agent': '2b2tWikiBot/2.0 (Miraheze; 2b2t Wiki) Draft Review Bot'
+}
+
 def get_user_id(username: str) -> str:
     """Get user ID from MediaWiki API."""
     user_params = {
@@ -25,7 +29,7 @@ def get_user_id(username: str) -> str:
         "ususers": username,
         "format": "json"
     }
-    user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
+    user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params, headers=headers)
     user_json = user_request.json()
     return str(user_json['query']['users'][0]['userid'])
 
@@ -70,9 +74,6 @@ def get_user_ids(usernames: list[str]) -> dict[str, str]:
 
 def populate_db(db: DraftDatabase):
     """Populate the database with drafts from the wiki API."""
-    headers = {
-        'User-Agent': '2b2tWikiBot/2.0 (Miraheze; 2b2t Wiki) Draft Review Bot'
-    }
     
     params = {
         "action": "query",
