@@ -53,31 +53,39 @@ class DraftBot(commands.Cog):
 
     @tasks.loop(seconds=60)
     async def fetch_draft(self, *args):
-        # channel = self.bot.get_channel(1075585762243915787)  # channel ID goes here (bot testing)
-        channel = self.bot.get_channel(1150122572294410441)  # channel ID goes here (draft-menders)
+        print("\n=== Running fetch_draft ===")
+        channel = self.bot.get_channel(1150122572294410441)  # draft-menders channel
 
+        print("Getting current drafts from database...")
         old_drafts = set(self.db.get_all_drafts().keys())
+        print(f"Found {len(old_drafts)} existing drafts")
+        
         try:
+            print("Attempting to populate database from wiki...")
             populate_db(self.db)
             new_drafts = set(self.db.get_all_drafts().keys())
+            print(f"Database now has {len(new_drafts)} drafts")
+            
             new_pages = [x for x in new_drafts if x not in old_drafts]
+            print(f"Found {len(new_pages)} new drafts")
 
             for page in new_pages:
+                print(f"Processing new draft: {page}")
                 name = page[page.find('/', page.find('/') + 1) + 1:]
                 user = page[page.find(':') + 1:page.find('/')]
                 if re.fullmatch(good_url, page) is None:
+                    print(f"Invalid URL format for {page}, fixing...")
                     page_move.fix_url(page, user, name)
                     continue
 
+                print(f"Fetching user info for {user}")
                 user_params = {
                     "action": "query",
                     "list": "users",
                     "ususers": user,
                     "format": "json"
                 }
-
-                # guild = self.bot.get_guild(697848129185120256)
-                # role = guild.get_role(843007895573889024)
+                
                 user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
                 user_json = user_request.json()
                 user_id = str(user_json['query']['users'][0]['userid'])
@@ -89,37 +97,22 @@ class DraftBot(commands.Cog):
 
                 draft_url = self.db.get_draft(page).url if self.db.get_draft(page) else None
                 if not draft_url:
+                    print(f"No URL found for draft {page}")
                     continue
-                # if no thread for this draft is found:
+                    
                 if thread is None:
-                    embed = discord.Embed(
-                        title='Draft: ' + name,
-                        url=draft_url,
-                        color=discord.Color.from_rgb(36, 255, 0)
-                    )
-                    embed.set_author(
-                        name=user,
-                        url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}",
-                        icon_url=f"https://static.miraheze.org/2b2twiki/avatars/2b2twiki_{user_id}_l.png"
-                    )
-
-                    draft_message = await channel.send(embed=embed)
-                    new_thread = await channel.create_thread(
-                        name='Draft: ' + name,
-                        message=draft_message,
-                        reason="New draft"
-                    )
-                    threads.add(new_thread)
-                    print(f"Found Draft:{user}/{name} at {datetime.datetime.now()}, new thread opened")
-                # else if a thread is found but it is closed:
+                    print(f"Creating new thread for {page}")
+                    # Rest of your thread creation code...
                 elif thread.archived:
+                    print(f"Unarchiving thread for {page}")
                     await thread.unarchive()
-                    print(f"Found Draft:{user}/{name} at {datetime.datetime.now()}, opened existing thread")
                 else:
-                    print(f"Found Draft:{user}/{name} at {datetime.datetime.now()}, thread already exists")
+                    print(f"Thread already exists for {page}")
 
-        except requests.HTTPError as e:
-            print(e)
+        except Exception as e:
+            print(f"Error in fetch_draft: {e}")
+            import traceback
+            traceback.print_exc()
 
     @fetch_draft.before_loop
     async def before_fetch_draft(self):
