@@ -233,6 +233,56 @@ class DraftBot(commands.Cog):
                 
         for page_list in master_list:
             await ctx.respond(embeds=page_list, ephemeral=True)
+    
+    @discord.slash_command(name='dbcheck', description='Check database status')
+    @commands.has_role(1159901879417974795)  # Bot Wrangler role
+    async def dbcheck(self, ctx: discord.ApplicationContext):
+        await ctx.defer(ephemeral=True)
+        
+        try:
+            # Check if database file exists
+            if not path.exists(self.db.db_path):
+                await ctx.respond(f"Database file not found at: {self.db.db_path}", ephemeral=True)
+                return
+                
+            # Get all drafts
+            drafts = self.db.get_all_drafts()
+            
+            # Create debug info embed
+            embed = discord.Embed(
+                title="Database Status",
+                color=discord.Color.blue()
+            )
+            
+            embed.add_field(
+                name="Database Path", 
+                value=self.db.db_path, 
+                inline=False
+            )
+            
+            embed.add_field(
+                name="Number of Drafts", 
+                value=str(len(drafts)), 
+                inline=False
+            )
+            
+            if drafts:
+                # Show first few drafts as sample
+                sample = list(drafts.items())[:5]
+                sample_text = "\n".join(f"- {title}" for title, _ in sample)
+                if len(drafts) > 5:
+                    sample_text += "\n..."
+                
+                embed.add_field(
+                    name="Sample Drafts",
+                    value=sample_text or "None",
+                    inline=False
+                )
+            
+            await ctx.respond(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            await ctx.respond(f"Error checking database: {str(e)}", ephemeral=True)
 
 
 def setup(bot: commands.Bot):
