@@ -329,14 +329,22 @@ class DraftBot(commands.Cog):
                     master_list[counter].append(embed)
 
             # Send all embeds using followup messages
-            for i, page_list in enumerate(master_list):
-                if page_list:  # Only send if there are embeds
-                    await ctx.followup.send(embeds=page_list)
+            try:
+                for i, page_list in enumerate(master_list):
+                    if page_list:  # Only send if there are embeds
+                        try:
+                            await ctx.followup.send(embeds=page_list)
+                        except discord.NotFound:
+                            logger.error("Interaction no longer valid")
+                            break
+            except Exception as e:
+                logger.error(f"Error sending embed batch {i}: {str(e)}")
+                logger.error(traceback.format_exc())
+                break
 
         except Exception as e:
             logger.error(f"Error in list command: {str(e)}")
             logger.error(traceback.format_exc())
-            await ctx.followup.send(f"Error listing drafts: {str(e)}")
 
     @discord.slash_command(name='debug', description='Intended for bot developers only')
     @commands.has_role(1159901879417974795)
