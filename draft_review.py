@@ -29,6 +29,22 @@ def get_user_id(username: str) -> str:
     user_json = user_request.json()
     return str(user_json['query']['users'][0]['userid'])
 
+def get_user_ids(usernames: list[str]) -> dict[str, str]:
+    """Get multiple user IDs in a single API call."""
+    if not usernames:
+        return {}
+        
+    user_params = {
+        "action": "query",
+        "list": "users",
+        "ususers": "|".join(usernames),
+        "format": "json"
+    }
+    user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
+    user_json = user_request.json()
+    return {user_info['name']: str(user_info['userid']) 
+            for user_info in user_json['query']['users']}
+
 def populate_db(db: DraftDatabase):
     """Populate the database with drafts from the wiki API."""
     headers = {
@@ -99,6 +115,30 @@ class DraftBot(commands.Cog):
         self.bot = bot
         db_path = os.getenv('DATABASE_PATH')
         self.db = DraftDatabase(db_path)
+        
+        # Initial population and caching
+        print("=== Performing initial database population and user caching ===")
+        populate_db(self.db)
+        
+        # Cache all users from existing drafts
+        drafts = self.db.get_all_drafts()
+        users_to_cache = set()
+        for title in drafts.keys():
+            username = title[title.find(':') + 1:title.find('/')]
+            cache_age = self.db.get_user_cache_age(username)
+            if cache_age is None or cache_age > 86400:  # Cache for 24 hours
+                users_to_cache.add(username)
+        
+        if users_to_cache:
+            print(f"=== Caching {len(users_to_cache)} users ===")
+            try:
+                user_ids = get_user_ids(list(users_to_cache))
+                for username, user_id in user_ids.items():
+                    self.db.add_user(username, user_id)
+                    print(f"Cached user ID for {username}")
+            except Exception as e:
+                print(f"Error caching user IDs: {e}")
+        
         self.fetch_draft.start()
 
     def cog_unload(self):
