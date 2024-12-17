@@ -374,13 +374,20 @@ class DraftBot(commands.Cog):
     @discord.slash_command(name='dbcheck', description='Check database status')
     @commands.has_role(1159901879417974795)  # Bot Wrangler role
     async def dbcheck(self, ctx: discord.ApplicationContext):
+        """Check database status with proper interaction handling"""
+        # Defer the response immediately to prevent timeout
+        await ctx.defer(ephemeral=True)
+        
         try:
             # Check if database file exists
             if not path.exists(self.db.db_path):
-                await ctx.respond(f"Database file not found at: {self.db.db_path}", ephemeral=True)
+                await ctx.followup.send(
+                    f"Database file not found at: {self.db.db_path}",
+                    ephemeral=True
+                )
                 return
                 
-            # Get all drafts and users
+            # Get all drafts
             drafts = self.db.get_all_drafts()
             
             # Create debug info embed
@@ -432,10 +439,19 @@ class DraftBot(commands.Cog):
                 inline=False
             )
             
-            await ctx.respond(embed=embed, ephemeral=True)
+            # Send the response using followup since we deferred earlier
+            await ctx.followup.send(embed=embed, ephemeral=True)
             
         except Exception as e:
-            await ctx.respond(f"Error checking database: {str(e)}", ephemeral=True)
+            logger.error(f"Database check error: {str(e)}", exc_info=True)
+            try:
+                # Use followup for error message since we deferred earlier
+                await ctx.followup.send(
+                    f"Error checking database: {str(e)}",
+                    ephemeral=True
+                )
+            except Exception as e2:
+                logger.error(f"Failed to send error message: {str(e2)}", exc_info=True)
 
 
 def setup(bot: commands.Bot):
