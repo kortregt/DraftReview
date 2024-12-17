@@ -170,48 +170,71 @@ class DraftBot(commands.Cog):
 
     @discord.slash_command(name='list', description="Provides a list of all pending drafts")
     async def list(self, ctx: discord.ApplicationContext):
-        await ctx.defer()
-        master_list = []
-        pages = []
-        master_list.append(pages)
-        counter = 0
-        
-        drafts = self.db.get_all_drafts()
-        for page, draft in drafts.items():
-            name = page[page.find('/', page.find('/') + 1) + 1:]
-            user = page[page.find(':') + 1:page.find('/')]
-            
+        await ctx.defer()  # Remove ephemeral flag
+
+        try:
+            master_list = []
+            pages = []
+            master_list.append(pages)
+            counter = 0
+
+            drafts = self.db.get_all_drafts()
+            if not drafts:
+                await ctx.respond("No drafts found.")
+                return
+
+            # Pre-fetch all user data to avoid multiple API calls
+            users = set(page[page.find(':') + 1:page.find('/')] for page in drafts.keys())
+            user_data = {}
             user_params = {
                 "action": "query",
                 "list": "users",
-                "ususers": user,
+                "ususers": "|".join(users),
                 "format": "json"
             }
             user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
             user_json = user_request.json()
-            user_id = str(user_json['query']['users'][0]['userid'])
-            
-            embed = discord.Embed(
-                title='Draft: ' + name,
-                url=draft.url,
-                color=discord.Color.from_rgb(36, 255, 0)
-            )
-            embed.set_author(
-                name=user,
-                url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}",
-                icon_url=f"https://static.miraheze.org/2b2twiki/avatars/2b2twiki_{user_id}_l.png"
-            )
-            
-            if len(master_list[counter]) < 10:
-                master_list[counter].append(embed)
-            else:
-                counter += 1
-                new_list = []
-                master_list.append(new_list)
-                master_list[counter].append(embed)
-                
-        for page_list in master_list:
-            await ctx.respond(embeds=page_list)
+            for user_info in user_json['query']['users']:
+                user_data[user_info['name']] = str(user_info['userid'])
+
+            # Create embeds
+            for page, draft in drafts.items():
+                name = page[page.find('/', page.find('/') + 1) + 1:]
+                user = page[page.find(':') + 1:page.find('/')]
+
+                user_id = user_data.get(user, "0")  # Use cached user data
+
+                embed = discord.Embed(
+                    title='Draft: ' + name,
+                    url=draft.url,
+                    color=discord.Color.from_rgb(36, 255, 0)
+                )
+                embed.set_author(
+                    name=user,
+                    url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}",
+                    icon_url=f"https://static.miraheze.org/2b2twiki/avatars/2b2twiki_{user_id}_l.png"
+                )
+
+                if len(master_list[counter]) < 10:
+                    master_list[counter].append(embed)
+                else:
+                    counter += 1
+                    new_list = []
+                    master_list.append(new_list)
+                    master_list[counter].append(embed)
+
+            # Send responses
+            first = True
+            for page_list in master_list:
+                if page_list:  # Only send if there are embeds
+                    if first:
+                        await ctx.respond(embeds=page_list)
+                        first = False
+                    else:
+                        await ctx.followup.send(embeds=page_list)
+
+        except Exception as e:
+            await ctx.respond(f"Error listing drafts: {str(e)}")
 
     @discord.slash_command(name='debug', description='Intended for bot developers only')
     @commands.has_role(1159901879417974795)
