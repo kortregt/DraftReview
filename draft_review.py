@@ -236,5 +236,6 @@ class DraftBot(commands.Cog):
             await ctx.respond(embeds=page_list, ephemeral=True)
 
 
-def setup(bot: commands.Bot):
+def setup(bot):
+    print("Setting up DraftReview cog")  # Debug print
     bot.add_cog(DraftBot(bot))

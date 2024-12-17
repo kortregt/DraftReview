@@ -203,5 +203,6 @@ class DraftVote(commands.Cog):
         log_vote(f"Vote completed for {draft_name} by {author}: {'Approved' if view.result else 'Rejected'}")
 
 
-def setup(bot: commands.Bot):
+def setup(bot):
+    print("Setting up DraftVote cog")  # Debug print
     bot.add_cog(DraftVote(bot))

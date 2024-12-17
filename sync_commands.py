@@ -4,6 +4,7 @@ from discord.ext import commands
 import asyncio
 import os
 from dotenv import load_dotenv
+import sys
 
 class SyncBot(commands.Bot):
     def __init__(self):
@@ -15,29 +16,26 @@ class SyncBot(commands.Bot):
             help_command=None,
             intents=intents
         )
+        print(f"Python path: {sys.path}")  # Debug print
     
     async def setup_hook(self):
         """Setup hook that runs when the bot starts."""
-        print("\nLoading extensions...")
+        print("\nIn setup_hook")  # Debug print
+        print("Loading extensions...")
         try:
-            # First check if files exist
-            for ext in ["draft_review", "draft_vote"]:
-                if os.path.exists(f"{ext}.py"):
-                    print(f"Found {ext}.py")
-                else:
-                    print(f"WARNING: Could not find {ext}.py")
-
+            print(f"Current directory: {os.getcwd()}")  # Debug print
+            print(f"Directory contents: {os.listdir('.')}")  # Debug print
+            
             # Try to load extensions
             for ext in ["draft_review", "draft_vote"]:
+                print(f"\nTrying to load {ext}...")  # Debug print
                 try:
                     await self.load_extension(ext)
                     print(f"✓ Successfully loaded {ext}")
-                    # Print the commands from this extension
                     if ext in self.cogs:
-                        cog = self.cogs[ext]
-                        print(f"  Commands in {ext}:")
-                        for cmd in cog.walk_commands():
-                            print(f"  - {cmd.name}")
+                        print(f"Found cog {ext} in self.cogs")
+                        for command in self.cogs[ext].walk_commands():
+                            print(f"  Command found: {command.name}")
                 except Exception as e:
                     print(f"✗ Failed to load {ext}: {str(e)}")
                     raise
@@ -58,7 +56,8 @@ class SyncBot(commands.Bot):
             print(f"Found guild: {guild.name} ({guild_id})")
             try:
                 print("\nSyncing commands...")
-                print("Current commands before sync:", [cmd.name for cmd in self.commands])
+                print(f"Current cogs: {list(self.cogs.keys())}")  # Debug print
+                print(f"Current commands: {[cmd.name for cmd in self.commands]}")
                 commands = await self.sync_commands(guild_ids=[guild_id])
                 if commands:
                     print("\nSuccessfully synced commands:")
@@ -70,14 +69,18 @@ class SyncBot(commands.Bot):
                 print(f"ERROR: Bot lacks permissions to sync commands: {e}")
             except Exception as e:
                 print(f"ERROR during command sync: {e}")
+                print(f"Error type: {type(e)}")  # Debug print
+                import traceback
+                traceback.print_exc()  # Debug print
         else:
             print(f"Could not find guild with ID: {guild_id}")
             print("Available guilds:", [g.name for g in self.guilds])
         
-        # Properly close the session
-        await self.close()
-        for session in self._connection.http._session:
-            await session.close()
+        # Clean shutdown
+        try:
+            await self.close()
+        except Exception as e:
+            print(f"Error during shutdown: {e}")
 
 async def sync_commands():
     """Sync slash commands to the guild."""
