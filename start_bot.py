@@ -24,27 +24,41 @@ load_dotenv()
 intents = discord.Intents.default()
 intents.message_content = True
 
+
 class DraftReviewBot(commands.Bot):
     def __init__(self):
         super().__init__(
             command_prefix='~',
             help_command=None,
-            intents=intents
+            intents=intents,
+            auto_sync_commands=True  # Explicitly set this to True
         )
-    
+
     async def setup_hook(self):
         """Setup hook that runs when the bot starts."""
+        logger.info("Loading extensions...")
         await self.load_extension("draft_review")
         await self.load_extension("draft_vote")
         logger.info("Bot extensions loaded")
 
+    async def on_connect(self):
+        """Runs when the bot connects to Discord."""
+        logger.info("Bot connected to Discord")
+        # Let the parent class handle command syncing
+        await super().on_connect()
+        logger.info(f"Commands after sync: {[cmd.name for cmd in self.commands]}")
+
     async def on_ready(self):
         """Event that runs when the bot is ready."""
         logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
+        logger.info("Bot is ready!")
+        logger.info(f"Available commands: {[cmd.name for cmd in self.commands]}")
+
 
 async def main():
     async with DraftReviewBot() as bot:
         await bot.start(environ['BotToken'])
+
 
 # Run the bot
 try:
