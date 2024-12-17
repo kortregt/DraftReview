@@ -7,7 +7,7 @@ import logging
 
 import discord
 from discord.ext import commands
-from discord import ButtonStyle
+from discord.ui import Modal, InputText, View, Button
 
 from draft_database import DraftDatabase
 
@@ -25,16 +25,16 @@ def log_vote(message: str) -> None:
         file.write(f"[{timestamp}] {message}\n")
 
 
-class ReviewModal(discord.Modal):
+class ReviewModal(Modal):
     def __init__(self, is_approval: bool) -> None:
         title = "Draft Review" if is_approval else "Draft Rejection"
         super().__init__(title=title)
 
-        self.input = discord.TextInput(
+        self.input = InputText(
             label="Categories" if is_approval else "Rejection Reason",
             placeholder=("Enter categories separated by commas" if is_approval
                          else "Enter reason for rejection"),
-            style=discord.TextStyle.paragraph,
+            style=discord.InputTextStyle.paragraph,
             required=True,
             row=0
         )
@@ -46,7 +46,7 @@ class ReviewModal(discord.Modal):
         await interaction.response.defer()
 
 
-class VoteView(discord.ui.View):
+class VoteView(View):
     def __init__(self,
                  author: str,
                  draft_name: str,
@@ -79,11 +79,11 @@ class VoteView(discord.ui.View):
         return embed
 
     @discord.ui.button(label="Approve (0)", style=discord.ButtonStyle.green, emoji="✅")
-    async def approve(self, button: discord.ui.Button, interaction: discord.Interaction):
+    async def approve(self, button: Button, interaction: discord.Interaction):
         await self._handle_vote(interaction, True)
 
     @discord.ui.button(label="Reject (0)", style=discord.ButtonStyle.red, emoji="❌")
-    async def reject(self, button: discord.ui.Button, interaction: discord.Interaction):
+    async def reject(self, button: Button, interaction: discord.Interaction):
         await self._handle_vote(interaction, False)
 
     async def _handle_vote(self, interaction: discord.Interaction, is_approve: bool):
