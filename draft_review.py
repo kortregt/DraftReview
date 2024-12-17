@@ -4,6 +4,7 @@ from discord.ext import tasks, commands
 import datetime
 import re
 import os
+from os import path
 
 import draft_deny
 import draft_move
