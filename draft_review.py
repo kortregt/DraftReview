@@ -371,10 +371,22 @@ class DraftBot(commands.Cog):
             if page_list:
                 await ctx.followup.send(embeds=page_list, ephemeral=True)
     
-    @discord.slash_command(name='dbcheck', description='Check database status')
+    @discord.slash_command(
+        name='dbcheck',
+        description='Check database status'
+    )
+    @discord.option(
+        "draft",
+        description="Check a specific draft by name",
+        required=False,
+        type=str
+    )
     @commands.has_role(1159901879417974795)  # Bot Wrangler role
-    async def dbcheck(self, ctx: discord.ApplicationContext):
-        """Check database status with proper interaction handling"""
+    async def dbcheck(self, ctx: discord.ApplicationContext, draft: str = None):
+        """Check database status with proper interaction handling.
+        
+        Parameters:
+            draft (str, optional): Name of specific draft to check"""
         # Defer the response immediately to prevent timeout
         await ctx.defer(ephemeral=True)
         
@@ -387,8 +399,14 @@ class DraftBot(commands.Cog):
                 )
                 return
                 
-            # Get all drafts
-            drafts = self.db.get_all_drafts()
+            # Get drafts
+            all_drafts = self.db.get_all_drafts()
+            
+            # Filter drafts if draft name provided
+            if draft:
+                drafts = {k: v for k, v in all_drafts.items() if draft in k}
+            else:
+                drafts = all_drafts
             
             # Create debug info embed
             embed = discord.Embed(
