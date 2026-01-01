@@ -1,6 +1,6 @@
 services:
   bot:
-    image: kortregt/draftreview:latest
+    build: .
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
