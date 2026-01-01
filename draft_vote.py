@@ -86,12 +86,8 @@ class PollVoteView:
         )
 
         answers = [
-            PollAnswer(
-                media=PollMedia(text="Approve", emoji="✅")
-            ),
-            PollAnswer(
-                media=PollMedia(text="Reject", emoji="❌")
-            )
+            PollAnswer(text="Approve", emoji="✅"),
+            PollAnswer(text="Reject", emoji="❌")
         ]
 
         # Duration in hours (Discord API expects hours as integer)
