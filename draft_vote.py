@@ -1,171 +1,230 @@
 import asyncio
 import time
+import os
+from typing import Optional, List
+from datetime import datetime, timedelta
+import logging
 
 import discord
 from discord.ext import commands
+from discord.ui import Modal, InputText, View, Button
 
-logging_file_path = '/app/logs/discord.log'
+from draft_database import DraftDatabase
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 
-def log_poll_event(message):
-    # Define the path to the log file
-    log_file_path = 'root/discord_logs/polls.log'
-
-    # Open the file in append mode and write the message
+def log_vote(message: str) -> None:
+    """Log vote events to a file."""
+    log_dir = os.getenv('LOG_DIR', '/app/logs')
+    log_file_path = os.path.join(log_dir, 'votes.log')
+    os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     with open(log_file_path, 'a') as file:
-        file.write(f"{message}\n")
-
-class Poll(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.yesList = []
-        self.noList = []
+        file.write(f"[{timestamp}] {message}\n")
 
 
-    @discord.ui.button(label="Approve: 0", custom_id="approve", style=discord.ButtonStyle.green, emoji="👍")
-    async def approve_callback(self, approve, interaction: discord.Interaction):
-        user = interaction.user
-        if user not in self.yesList:
-            self.yesList.append(user)
-            if user in self.noList:
-                self.noList.remove(user)
-                self.children[1].label = f"Reject: {len(self.noList)}"
+class ReviewModal(Modal):
+    def __init__(self, is_approval: bool) -> None:
+        title = "Draft Review" if is_approval else "Draft Rejection"
+        super().__init__(title=title)
+
+        self.input = InputText(
+            label="Categories" if is_approval else "Rejection Reason",
+            placeholder=("Enter categories separated by commas" if is_approval
+                         else "Enter reason for rejection"),
+            style=discord.InputTextStyle.paragraph,
+            required=True,
+            row=0
+        )
+        self.add_item(self.input)
+        self.result = None
+
+    async def callback(self, interaction: discord.Interaction):
+        self.result = self.input.value
+        await interaction.response.defer()
+
+
+class VoteView(View):
+    def __init__(self,
+                 author: str,
+                 draft_name: str,
+                 required_votes: int = 3,
+                 timeout: float = 86400):  # 24 hours default
+        super().__init__(timeout=timeout)
+        self.author = author
+        self.draft_name = draft_name
+        self.required_votes = required_votes
+        self.approve_votes: List[int] = []
+        self.reject_votes: List[int] = []
+        self.result: Optional[bool] = None
+        self.end_time = int((datetime.now() + timedelta(seconds=timeout)).timestamp())
+        self.message = None
+
+    def _create_status_embed(self) -> discord.Embed:
+        """Create an embed showing the current voting status."""
+        embed = discord.Embed(
+            title=f"Vote: {self.draft_name}",
+            description=(
+                f"Draft by {self.author}\n\n"
+                f"Required votes: {self.required_votes}\n"
+                f"Ends: <t:{self.end_time}:R>\n\n"
+                f"Current status:\n"
+                f"✅ Approve: {len(self.approve_votes)}\n"
+                f"❌ Reject: {len(self.reject_votes)}"
+            ),
+            color=discord.Color.blue()
+        )
+        return embed
+
+    @discord.ui.button(label="Approve (0)", style=discord.ButtonStyle.green, emoji="✅")
+    async def approve(self, button: Button, interaction: discord.Interaction):
+        await self._handle_vote(interaction, True)
+
+    @discord.ui.button(label="Reject (0)", style=discord.ButtonStyle.red, emoji="❌")
+    async def reject(self, button: Button, interaction: discord.Interaction):
+        await self._handle_vote(interaction, False)
+
+    async def _handle_vote(self, interaction: discord.Interaction, is_approve: bool):
+        """Handle a vote being cast."""
+        user_id = interaction.user.id
+
+        # Remove existing votes by this user
+        if user_id in self.approve_votes:
+            self.approve_votes.remove(user_id)
+        if user_id in self.reject_votes:
+            self.reject_votes.remove(user_id)
+
+        # Add new vote
+        if is_approve:
+            self.approve_votes.append(user_id)
         else:
-            self.yesList.remove(user)
-        approve.label = f"Approve: {len(self.yesList)}"
-        await interaction.response.edit_message(view=self)  # change edit_messages to followups.
+            self.reject_votes.append(user_id)
 
-    @discord.ui.button(label="Reject: 0", custom_id="reject", style=discord.ButtonStyle.red, emoji="👎")
-    async def reject_callback(self, reject, interaction: discord.Interaction):
-        user = interaction.user
-        if user not in self.noList:
-            self.noList.append(user)
-            if user in self.yesList:
-                self.yesList.remove(user)
-                self.children[0].label = f"Approve: {len(self.yesList)}"
-        else:
-            self.noList.remove(user)
-        reject.label = f"Reject: {len(self.noList)}"
-        await interaction.response.edit_message(view=self)  # change edit_messages to followups.
+        # Update button labels
+        self.children[0].label = f"Approve ({len(self.approve_votes)})"
+        self.children[1].label = f"Reject ({len(self.reject_votes)})"
 
-    async def on_timeout(self):
-        for button in self.children:
-            button.disabled = True  # Disable all buttons to prevent further interaction
-        await self.message.edit(content="This poll has ended.", view=self)
-        print("The poll has ended and buttons are disabled.")
+        # Check if we've reached the required votes
+        if len(self.approve_votes) >= self.required_votes:
+            self.result = True
+            self.stop()
+        elif len(self.reject_votes) >= self.required_votes:
+            self.result = False
+            self.stop()
 
+        # Update the message
+        embed = self._create_status_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
 
-"""
-Message that sends the button to view the Modal.
-"""
-
-
-class ModalMessage(discord.ui.View):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.title = ""
-        self.accepted = False
-        self.draftName = ""
-        self.draftTitle = ""
-        self.bot = None
-
-    @discord.ui.button(label="Give input for Draft", style=discord.ButtonStyle.green)
-    async def button_callback(self, button, interaction: discord.Interaction):
-        modal = VoteModal(title=self.title)  # Object within and Object. Objectception.
-        modal.draftName = self.draftName  # gotta parse this shit through
-        modal.draftTitle = self.draftTitle
-        modal.bot = self.bot
-
-        if self.accepted:
-            modal.accepted = True
-            modal.add_item(discord.ui.InputText(label="Categories for Draft"))
-        else:
-            modal.add_item(discord.ui.InputText(label="Reason for Rejection"))
-
-        await interaction.response.send_modal(modal)
+    async def on_timeout(self) -> None:
+        """Handle view timeout"""
+        for item in self.children:
+            item.disabled = True
+        if self.message:
+            await self.message.edit(view=self)
 
 
 class DraftVote(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.vote_id = 0
+        db_path = os.getenv('DRAFT_DB_PATH', 'drafts.db')
+        self.db = DraftDatabase(db_path)
 
-    async def sendModal(self, interaction: discord.Interaction, poll: Poll, name, title, bot):
-        modal = ModalMessage()
-        modal.draftName = name
-        modal.draftTitle = title
-        modal.bot = self.bot
-
-        if len(poll.yesList) > len(poll.noList):  # Not sure on rules here, will need to deliberate.
-            modal.title = "Accepted"
-            modal.accepted = True
-            await interaction.followup.send(view=modal, ephemeral=True)
-        else:
-            modal.title = "Rejected"
-            await interaction.followup.send(view=modal, ephemeral=True)
-
-    @commands.slash_command(name="vote", description="Starts/ends voting on a draft.")
+    @discord.slash_command(
+        name="vote",
+        description="Start a vote on a draft"
+    )
     @commands.has_any_role(843007895573889024, 1159901879417974795)
-    @discord.option("duration", float, description="Length of the vote in hours", required=False)
-    @discord.option("name", str, description="Author of the draft", required=True)
-    @discord.option("title", str, description="Title of the draft", required=True)
-    async def vote(self, ctx: discord.ApplicationContext, name, title, duration=24):
-        await ctx.response.defer()
-        page = discord.Embed(title=f"Vote for Draft: {title} by {name}",
-                             color=discord.Color.from_rgb(36, 255, 0),
-                             description=("Vote end: <t:" + str(round(time.time() + duration * 3600))) + ":R>")
+    async def vote(
+            self,
+            ctx: discord.ApplicationContext,
+            author: str,
+            draft_name: str,
+            required_votes: Optional[int] = 3,
+            duration: Optional[float] = 24.0
+    ):
+        """
+        Start a vote on a draft
 
-        poll = Poll()  # Create Poll object
-        message = await ctx.followup.send(embed=page,
-                                                  view=poll)  # Parse Poll and embed onto a message, and send it.
-        log_string = "Vote for Draft: {} by {} began at {}".format(title, name, time.strftime("%H:%M:%S"))
-        print(log_string)
-        log_poll_event(log_string)
+        Parameters
+        ----------
+        author : str
+            The author of the draft
+        draft_name : str
+            The name of the draft
+        required_votes : int
+            Number of votes required for decision (default: 3)
+        duration : float
+            Duration of vote in hours (default: 24)
+        """
+        await ctx.defer()
 
-        # await asyncio.sleep(5)  # testing purposes
-        await asyncio.sleep(duration * 3600)  # duration parsed through
-        poll.children[0].disabled = True  # Disable both buttons. Luckily, they are the only children.
-        poll.children[1].disabled = True
-        page.title = f"Vote for Draft: {title} by {name} has ended"
-        await message.edit(embed=page, view=poll)  # edit the poll with the buttons disabled.
-        await self.sendModal(ctx, poll, name, title, self.bot)
-        log_string = "Vote for Draft: {} by {} ended at {}".format(title, name, time.strftime("%H:%M:%S"))
-        print(log_string)
-        log_poll_event(log_string)
+        try:
+            # Verify draft exists
+            draft_title = f"User:{author}/Drafts/{draft_name}"
+            draft = self.db.get_draft(draft_title)
+            if not draft:
+                await ctx.followup.send(
+                    f"Error: Draft '{draft_name}' by {author} not found.",
+                    ephemeral=True
+                )
+                return
+
+            # Create and start vote
+            view = VoteView(
+                author=author,
+                draft_name=draft_name,
+                required_votes=required_votes,
+                timeout=duration * 3600
+            )
+
+            embed = view._create_status_embed()
+            message = await ctx.followup.send(embed=embed, view=view)
+            view.message = message
+
+            log_vote(f"Vote started for {draft_name} by {author}")
+
+            try:
+                await view.wait()
+
+                if view.result is None:  # Timeout
+                    await ctx.followup.send("Vote has timed out.")
+                    return
+
+                # Handle vote result
+                modal = ReviewModal(is_approval=view.result)
+                await ctx.interaction.response.send_modal(modal)
+                await modal.wait()
+
+                if view.result:  # Approved
+                    await self.bot.get_cog('DraftBot').approve(author, draft_name, modal.result)
+                    result_embed = discord.Embed(
+                        title="Draft Approved",
+                        description=f"{draft_name} by {author} has been approved.",
+                        color=discord.Color.green()
+                    )
+                else:  # Rejected
+                    await self.bot.get_cog('DraftBot').reject(author, draft_name, modal.result)
+                    result_embed = discord.Embed(
+                        title="Draft Rejected",
+                        description=f"{draft_name} by {author} has been rejected.",
+                        color=discord.Color.red()
+                    )
+
+                await ctx.followup.send(embed=result_embed)
+                log_vote(f"Vote completed for {draft_name} by {author}: {'Approved' if view.result else 'Rejected'}")
+
+            except asyncio.TimeoutError:
+                log_vote(f"Vote timed out for {draft_name} by {author}")
+                await message.edit(content="Vote has timed out.", view=None)
+                return
+
+        except Exception as e:
+            logger.error(f"Error in vote command: {str(e)}", exc_info=True)
+            await ctx.followup.send(f"An error occurred: {str(e)}", ephemeral=True)
 
 
-"""
-Create Modal for user interaction after vote completion
-"""
-
-
-class VoteModal(discord.ui.Modal):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.accepted = False  # Defaulted to false, changed to True in ModalMesage() class.
-        self.draftName = ""
-        self.draftTitle = ""
-        self.bot = commands.Bot
-
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        textInput = self.children[0].value  # this is what the user has inputted into the textbox.
-        if self.accepted:
-            await self.bot.get_cog('DraftBot').approve(self.draftName, self.draftTitle, textInput)
-            print("ACCEPTED {0} by {1}".format(self.draftName, self.draftTitle))
-            embed = discord.Embed(title=f"Draft:{self.draftTitle} by {self.draftName} approved!")
-            draftTitle = self.draftTitle.replace(" ", "_")
-            embed.url = f"https://2b2t.miraheze.org/wiki/{draftTitle}"
-            await interaction.followup.send(embed=embed)
-        else:
-            await self.bot.get_cog('DraftBot').reject(self.draftName, self.draftTitle, textInput)
-            print("REJECTED {0} by {1}".format(self.draftName, self.draftTitle))
-            embed = discord.Embed(title=f"Draft:{self.draftTitle} by {self.draftName} rejected.")
-            draftName = self.draftName.replace(" ", "_")
-            draftTitle = self.draftTitle.replace(" ", "_")
-            embed.url = f"https://2b2t.miraheze.org/wiki/User:{draftName}/Drafts/{draftTitle}"
-            await interaction.followup.send(embed=embed)
-
-
-def setup(bot):
+def setup(bot: commands.Bot):
     bot.add_cog(DraftVote(bot))

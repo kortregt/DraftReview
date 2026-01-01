@@ -3,41 +3,167 @@ import requests
 from discord.ext import tasks, commands
 import datetime
 import re
+import os
+from os import path
+import logging
+import traceback
 
 import draft_deny
 import draft_move
 import page_move
 import clean_redirects
 import add_category
+from draft_database import DraftDatabase
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 good_url = re.compile('.+Drafts/.+')
 
 threads = set()
 
+headers = {
+    'User-Agent': '2b2tWikiBot/2.0 (Miraheze; 2b2t Wiki) Draft Review Bot'
+}
 
-def populate_dic():
-    pageDic = {}
-    params = {"action": "query", "list": "categorymembers", "cmtitle": "Category:Drafts_awaiting_review",
-              "cmlimit": "100", "format": "json"}
-    url = 'https://2b2t.miraheze.org/'
+def get_user_id(username: str) -> str:
+    """Get user ID from MediaWiki API."""
+    user_params = {
+        "action": "query",
+        "list": "users",
+        "ususers": username,
+        "format": "json"
+    }
+    user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params, headers=headers)
+    user_json = user_request.json()
+    return str(user_json['query']['users'][0]['userid'])
 
-    request = requests.get(url + "w/api.php", params=params)
-    request.raise_for_status()
-    json_data = request.json()
+def get_user_ids(usernames: list[str]) -> dict[str, str]:
+    """Get multiple user IDs in a single API call."""
+    if not usernames:
+        return {}
+    
+    # Split usernames into chunks of 50 to avoid URL length limits
+    chunk_size = 50
+    user_ids = {}
+    
+    for i in range(0, len(usernames), chunk_size):
+        chunk = usernames[i:i + chunk_size]
+        user_params = {
+            "action": "query",
+            "list": "users",
+            "ususers": "|".join(chunk),
+            "format": "json"
+        }
+        try:
+            print(f"=== Fetching user IDs for chunk {i//chunk_size + 1} ===")
+            user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
+            user_request.raise_for_status()
+            user_json = user_request.json()
+            
+            if 'query' in user_json and 'users' in user_json['query']:
+                for user_info in user_json['query']['users']:
+                    if 'userid' in user_info:
+                        user_ids[user_info['name']] = str(user_info['userid'])
+            else:
+                print(f"Unexpected API response structure: {user_json}")
+                
+        except requests.RequestException as e:
+            print(f"API request failed for chunk {i//chunk_size + 1}: {e}")
+            if hasattr(e, 'response'):
+                print(f"Response content: {e.response.text}")
+        except Exception as e:
+            print(f"Error processing chunk {i//chunk_size + 1}: {e}")
+    
+    return user_ids
 
-    pages = json_data['query']['categorymembers']
-    for i in range(len(pages)):
-        title = pages[i]['title']
-        link = url + "wiki/" + pages[i]['title']
-        link = link.replace(" ", "_")
-        pageDic[title] = link
-    return pageDic
+def populate_db(db: DraftDatabase):
+    """Populate the database with drafts from the wiki API."""
+    
+    params = {
+        "action": "query",
+        "list": "categorymembers",
+        "cmtitle": "Category:Drafts_awaiting_review",
+        "cmlimit": "100",
+        "format": "json"
+    }
+
+    url = 'https://2b2t.miraheze.org/w/api.php'
+    
+    try:
+        request = requests.get(url, params=params, headers=headers)
+        request.raise_for_status()
+        
+        json_data = request.json()
+        
+        if 'query' not in json_data:
+            print(f"Error: 'query' not found in response. Full response: {json_data}")
+            return
+            
+        if 'categorymembers' not in json_data['query']:
+            print(f"Error: 'categorymembers' not found in query. Full response: {json_data}")
+            return
+
+        pages = json_data['query']['categorymembers']
+        for page in pages:
+            title = page['title']
+            link = f"https://2b2t.miraheze.org/wiki/{title.replace(' ', '_')}"
+            db.add_draft(title, link)
+            
+            # Extract username from title and update user cache if needed
+            username = title[title.find(':') + 1:title.find('/')]
+            cache_age = db.get_user_cache_age(username)
+            if cache_age is None or cache_age > 86400:  # Cache for 24 hours
+                try:
+                    user_id = get_user_id(username)
+                    db.add_user(username, user_id)
+                    print(f"Updated user cache for {username}")
+                except Exception as e:
+                    print(f"Failed to get user ID for {username}: {e}")
+            
+    except requests.exceptions.RequestException as e:
+        print(f"Request error in populate_db: {str(e)}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response content: {e.response.text}")
+        raise
+    except ValueError as e:
+        print(f"JSON parsing error in populate_db: {str(e)}")
+        raise
+    except Exception as e:
+        print(f"Unexpected error in populate_db: {str(e)}")
+        raise
 
 
 class DraftBot(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.draft_dict = {}
+        db_path = os.getenv('DATABASE_PATH')
+        self.db = DraftDatabase(db_path)
+        
+        # Initial population and caching
+        print("=== Performing initial database population and user caching ===")
+        populate_db(self.db)
+        
+        # Cache all users from existing drafts
+        drafts = self.db.get_all_drafts()
+        users_to_cache = set()
+        for title in drafts.keys():
+            username = title[title.find(':') + 1:title.find('/')]
+            cache_age = self.db.get_user_cache_age(username)
+            if cache_age is None or cache_age > 86400:  # Cache for 24 hours
+                users_to_cache.add(username)
+        
+        if users_to_cache:
+            print(f"=== Caching {len(users_to_cache)} users ===")
+            try:
+                user_ids = get_user_ids(list(users_to_cache))
+                for username, user_id in user_ids.items():
+                    self.db.add_user(username, user_id)
+                    print(f"Cached user ID for {username}")
+            except Exception as e:
+                print(f"Error caching user IDs: {e}")
+        
         self.fetch_draft.start()
 
     def cog_unload(self):
@@ -45,55 +171,67 @@ class DraftBot(commands.Cog):
 
     @tasks.loop(seconds=60)
     async def fetch_draft(self, *args):
-        # channel = self.bot.get_channel(1075585762243915787)  # channel ID goes here (bot testing)
         channel = self.bot.get_channel(1150122572294410441)  # channel ID goes here (draft-menders)
 
-        oldReviewPages = set(self.draft_dict)
+        old_drafts = set(self.db.get_all_drafts().keys())
         try:
-            self.draft_dict = populate_dic()
-            newReviewPages = set(self.draft_dict)
-            newPages = [x for x in newReviewPages if x not in oldReviewPages]
-            for page in newPages:
+            populate_db(self.db)
+            new_drafts = set(self.db.get_all_drafts().keys())
+            new_pages = [x for x in new_drafts if x not in old_drafts]
+
+            for page in new_pages:
                 name = page[page.find('/', page.find('/') + 1) + 1:]
                 user = page[page.find(':') + 1:page.find('/')]
                 if re.fullmatch(good_url, page) is None:
                     page_move.fix_url(page, user, name)
                     continue
-                user_params = {"action": "query", "list": "users", "ususers": page[page.find(':') + 1:page.find('/')],
-                               "format": "json"}
-                user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
-                user_json = user_request.json()
-                user_id = str(user_json['query']['users'][0]['userid'])
 
-                # guild = self.bot.get_guild(697848129185120256)
-                # role = guild.get_role(843007895573889024)
                 threads.update(channel.threads)
                 async for thread in channel.archived_threads():
                     threads.add(thread)
                 thread = discord.utils.get(threads, name='Draft: ' + name)
+
+                draft_url = self.db.get_draft(page).url if self.db.get_draft(page) else None
+                if not draft_url:
+                    continue
+
                 # if no thread for this draft is found:
                 if thread is None:
-                    embed = discord.Embed(title='Draft: ' + name, url=self.draft_dict[page],
-                                          color=discord.Color.from_rgb(36, 255, 0))
-                    embed.set_author(name=user, url="https://2b2t.miraheze.org/wiki/User:" + user.replace(" ", "_"),
-                                     icon_url="https://static.miraheze.org/2b2twiki/avatars/2b2twiki_" + user_id +
-                                              "_l.png")
+                    embed = discord.Embed(
+                        title='Draft: ' + name,
+                        url=draft_url,
+                        color=discord.Color.from_rgb(36, 255, 0)
+                    )
+                    
+                    # Get user ID from cache
+                    user_data = self.db.get_user(user)
+                    if user_data:
+                        embed.set_author(
+                            name=user,
+                            url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}",
+                            icon_url=f"https://static.miraheze.org/2b2twiki/avatars/2b2twiki_{user_data.user_id}_l.png"
+                        )
+                    else:
+                        embed.set_author(
+                            name=user,
+                            url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}"
+                        )
 
-                    # await channel.send(role.mention, embed=embed)  # ping
-                    draft_message = await channel.send(embed=embed)  # no ping
-                    new_thread = await channel.create_thread(name='Draft: ' + name, message=draft_message,
-                                                             reason="New draft")
+                    draft_message = await channel.send(embed=embed)
+                    new_thread = await channel.create_thread(
+                        name='Draft: ' + name,
+                        message=draft_message,
+                        reason="New draft"
+                    )
                     threads.add(new_thread)
-                    datetime_object = datetime.datetime.now()
-                    print(f"Found Draft:{user}/{name} at {str(datetime_object)}, new thread opened")
+                    print(f"Found Draft:{user}/{name} at {datetime.datetime.now()}, new thread opened")
                 # else if a thread is found but it is closed:
                 elif thread.archived:
                     await thread.unarchive()
-                    datetime_object = datetime.datetime.now()
-                    print(f"Found Draft:{user}/{name} at {str(datetime_object)}, opened existing thread")
+                    print(f"Found Draft:{user}/{name} at {datetime.datetime.now()}, opened existing thread")
                 else:
-                    datetime_object = datetime.datetime.now()
-                    print(f"Found Draft:{user}/{name} at {str(datetime_object)}, thread already exists")
+                    print(f"Found Draft:{user}/{name} at {datetime.datetime.now()}, thread already exists")
+
         except requests.HTTPError as e:
             print(e)
 
@@ -102,26 +240,15 @@ class DraftBot(commands.Cog):
         print('waiting...')
         await self.bot.wait_until_ready()
 
-    @commands.slash_command(name='help', description="Displays and explains this bot's functions")
+    @discord.slash_command(name='help', description="Displays and explains this bot's functions")
     async def help(self, ctx: discord.ApplicationContext):
-        await ctx.response.defer()
         embed = discord.Embed(title="Commands",
-                              # description="Note: for parameters containing spaces, surround the parameters in
-                              # quotes, " "or substitute spaces with underscores.", color=0x24ff00
-                              )
+                              description="Note: for parameters containing spaces, surround the parameters in quotes, or substitute spaces with underscores.",
+                              color=0x24ff00)
         embed.add_field(name="List drafts awaiting review", value="/list", inline=False)
         embed.add_field(name="Vote on a draft", value="/vote <user> <article> <duration> <auto>", inline=False)
-        # embed.add_field(name="Approve a draft", value='/approve <user> <article> <"category 1, category 2, etc.">',
-        #                 inline=False)
-        # embed.add_field(name="Reject a draft", value='/reject <user> <article> <"reason">', inline=False)
-        await ctx.followup.send(embed=embed)
+        await ctx.respond(embed=embed)
 
-    # @discord.application_command(name='approve', description="Approves a draft on the Wiki")
-    # @commands.has_role(843007895573889024)
-    # @discord.option("name", str, description="Author of the draft", required=True)
-    # @discord.option("title", str, description="Title of the draft", required=True)
-    # @discord.option("categories", str, description="Categories to add to the draft. Wrap in quotes and separate "
-    #                                                "with commas", required=False)
     async def approve(self, user, name, categories):
         datetime_object = datetime.datetime.now()
         print(f"Command /approve {user} {name} run at {str(datetime_object)}")
@@ -130,7 +257,7 @@ class DraftBot(commands.Cog):
         if categories is not None:
             add_category.add_category(user, name, categories)
         draft_move.move_page(user, name)
-        del self.draft_dict[f"User:{user}/Drafts/{name}"]
+        self.db.remove_draft(f"User:{user}/Drafts/{name}")
         thread = discord.utils.get(threads, name='Draft: ' + name)
         await thread.archive()
         user = user.replace(" ", "_")
@@ -138,62 +265,98 @@ class DraftBot(commands.Cog):
         print(f"Successfully moved page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}> to page " +
               f"<https://2b2t.miraheze.org/wiki/{name}>")
 
-    # @discord.application_command(name='reject', description="Rejects a draft on the Wiki")
-    # @commands.has_role(843007895573889024)
-    # @discord.option("name", str, description="Author of the draft", required=True)
-    # @discord.option("title", str, description="Title of the draft", required=True)
-    # @discord.option("summary", str, description="Reason for rejection, used for the edit summary", required=False)
     async def reject(self, user, name, summary):
         datetime_object = datetime.datetime.now()
         print(f"Command /reject {user} {name} {summary} run at {str(datetime_object)}")
         if summary is None:
             summary = "Rejected draft"
         draft_deny.deny_page(user, name, summary)
-        del self.draft_dict[f"User:{user}/Drafts/{name}"]
+        self.db.remove_draft(f"User:{user}/Drafts/{name}")
         thread = discord.utils.get(threads, name='Draft: ' + name)
         await thread.archive()
         user = user.replace(" ", "_")
         name = name.replace(" ", "_")
         print(f"Successfully rejected page <https://2b2t.miraheze.org/wiki/User:{user}/Drafts/{name}>")
 
-    @commands.slash_command(name='list', description="Provides a list of all pending drafts")
-    async def list(self, ctx:discord.ApplicationContext):
+    @discord.slash_command(name='list', description="Provides a list of all pending drafts")
+    async def list(self, ctx: discord.ApplicationContext):
+        # Defer the response immediately before any other operations
         await ctx.response.defer()
-        master_list = []
-        pages = []
-        master_list.append(pages)
-        counter = 0
-        for page in self.draft_dict:
-            name = page[page.find('/', page.find('/') + 1) + 1:]
-            user = page[page.find(':') + 1:page.find('/')]
-            user_params = {"action": "query", "list": "users", "ususers": page[page.find(':') + 1:page.find('/')],
-                           "format": "json"}
-            user_request = requests.get("https://2b2t.miraheze.org/w/api.php", params=user_params)
-            user_json = user_request.json()
-            user_id = str(user_json['query']['users'][0]['userid'])
-            embed = discord.Embed(title='Draft: ' + name, url=self.draft_dict[page],
-                                  color=discord.Color.from_rgb(36, 255, 0))
-            embed.set_author(name=user, url="https://2b2t.miraheze.org/wiki/User:" + user.replace(" ", "_"),
-                             icon_url="https://static.miraheze.org/2b2twiki/avatars/2b2twiki_" + user_id + "_l.png")
-            if len(master_list[counter]) < 10:
-                master_list[counter].append(embed)
-            else:
-                counter += 1
-                new_list = []
-                master_list.append(new_list)
-                master_list[counter].append(embed)
-        for page_list in master_list:
-            await ctx.followup.send(embeds=page_list)
+        
+        try:
+            drafts = self.db.get_all_drafts()
+            if not drafts:
+                await ctx.followup.send("No drafts found.")
+                return
 
-    @commands.slash_command(name='debug', description='Intended for bot developers only')
+            # Create embeds
+            master_list = []
+            pages = []
+            master_list.append(pages)
+            counter = 0
+
+            # Create embeds
+            for page, draft in drafts.items():
+                name = page[page.find('/', page.find('/') + 1) + 1:]
+                user = page[page.find(':') + 1:page.find('/')]
+
+                embed = discord.Embed(
+                    title='Draft: ' + name,
+                    url=draft.url,
+                    color=discord.Color.from_rgb(36, 255, 0)
+                )
+                
+                # Get user ID from cache
+                user_data = self.db.get_user(user)
+                if user_data:
+                    embed.set_author(
+                        name=user,
+                        url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}",
+                        icon_url=f"https://static.miraheze.org/2b2twiki/avatars/2b2twiki_{user_data.user_id}_l.png"
+                    )
+                else:
+                    embed.set_author(
+                        name=user,
+                        url=f"https://2b2t.miraheze.org/wiki/User:{user.replace(' ', '_')}"
+                    )
+
+                if len(master_list[counter]) < 10:
+                    master_list[counter].append(embed)
+                else:
+                    counter += 1
+                    new_list = []
+                    master_list.append(new_list)
+                    master_list[counter].append(embed)
+
+            # Send all embeds using followup messages
+            for i, page_list in enumerate(master_list):
+                if page_list:  # Only send if there are embeds
+                    try:
+                        await ctx.followup.send(embeds=page_list)
+                    except discord.NotFound:
+                        # If interaction is no longer valid, log it but don't try to send error message
+                        logger.error("Interaction no longer valid")
+                        break
+                    except Exception as e:
+                        logger.error(f"Error sending embed batch {i}: {str(e)}")
+                        logger.error(traceback.format_exc())
+                        break
+
+        except Exception as e:
+            # Log the error but don't try to send it through Discord
+            logger.error(f"Error in list command: {str(e)}")
+            logger.error(traceback.format_exc())
+
+    @discord.slash_command(name='debug', description='Intended for bot developers only')
     @commands.has_role(1159901879417974795)
     async def debug(self, ctx: discord.ApplicationContext):
-        await ctx.response.defer(ephemeral=True)
         master_list = []
         pages = []
         master_list.append(pages)
         counter = 0
-        for page in self.draft_dict:
+        
+        drafts = self.db.get_all_drafts()
+        for page in drafts:
             embed = discord.Embed(title=page)
             if len(master_list[counter]) < 10:
                 master_list[counter].append(embed)
@@ -202,8 +365,111 @@ class DraftBot(commands.Cog):
                 new_list = []
                 master_list.append(new_list)
                 master_list[counter].append(embed)
-        for page_list in master_list:
-            await ctx.followup.send(embeds=page_list, ephemeral=True)
+                
+        await ctx.respond(embeds=master_list[0], ephemeral=True)
+        for page_list in master_list[1:]:
+            if page_list:
+                await ctx.followup.send(embeds=page_list, ephemeral=True)
+    
+    @discord.slash_command(
+        name='dbcheck',
+        description='Check database status'
+    )
+    @discord.option(
+        "draft",
+        description="Check a specific draft by name",
+        required=False,
+        type=str
+    )
+    @commands.has_role(1159901879417974795)  # Bot Wrangler role
+    async def dbcheck(self, ctx: discord.ApplicationContext, draft: str = None):
+        """Check database status with proper interaction handling.
+        
+        Parameters:
+            draft (str, optional): Name of specific draft to check"""
+        # Defer the response immediately to prevent timeout
+        await ctx.defer(ephemeral=True)
+        
+        try:
+            # Check if database file exists
+            if not path.exists(self.db.db_path):
+                await ctx.followup.send(
+                    f"Database file not found at: {self.db.db_path}",
+                    ephemeral=True
+                )
+                return
+                
+            # Get drafts
+            all_drafts = self.db.get_all_drafts()
+            
+            # Filter drafts if draft name provided
+            if draft:
+                drafts = {k: v for k, v in all_drafts.items() if draft in k}
+            else:
+                drafts = all_drafts
+            
+            # Create debug info embed
+            embed = discord.Embed(
+                title="Database Status",
+                color=discord.Color.blue()
+            )
+            
+            embed.add_field(
+                name="Database Path", 
+                value=self.db.db_path, 
+                inline=False
+            )
+            
+            embed.add_field(
+                name="Number of Drafts", 
+                value=str(len(drafts)), 
+                inline=False
+            )
+            
+            if drafts:
+                # Show first few drafts as sample
+                sample = list(drafts.items())[:5]
+                sample_text = "\n".join(f"- {title}" for title, _ in sample)
+                if len(drafts) > 5:
+                    sample_text += "\n..."
+                
+                embed.add_field(
+                    name="Sample Drafts",
+                    value=sample_text or "None",
+                    inline=False
+                )
+            
+            # Add user cache info
+            users = set()
+            for title in drafts.keys():
+                username = title[title.find(':') + 1:title.find('/')]
+                users.add(username)
+            
+            cached_users = []
+            for username in users:
+                user_data = self.db.get_user(username)
+                if user_data:
+                    cached_users.append(username)
+            
+            embed.add_field(
+                name="User Cache Status",
+                value=f"Cached {len(cached_users)} out of {len(users)} users",
+                inline=False
+            )
+            
+            # Send the response using followup since we deferred earlier
+            await ctx.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Database check error: {str(e)}", exc_info=True)
+            try:
+                # Use followup for error message since we deferred earlier
+                await ctx.followup.send(
+                    f"Error checking database: {str(e)}",
+                    ephemeral=True
+                )
+            except Exception as e2:
+                logger.error(f"Failed to send error message: {str(e2)}", exc_info=True)
 
 
 def setup(bot: commands.Bot):
