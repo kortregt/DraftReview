@@ -240,7 +240,7 @@ class FinalizeView(View):
 class DraftVote(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        db_path = os.getenv('DRAFT_DB_PATH', 'drafts.db')
+        db_path = os.getenv('DATABASE_PATH')
         self.db = DraftDatabase(db_path)
 
     @discord.slash_command(
