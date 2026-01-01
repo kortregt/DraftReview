@@ -21,6 +21,7 @@ load_dotenv()
 # Setup intents
 intents = discord.Intents.default()
 intents.message_content = True
+intents.polls = True
 
 # Create bot
 bot = commands.Bot(command_prefix='~', help_command=None, intents=intents)
