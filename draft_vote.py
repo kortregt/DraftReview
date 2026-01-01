@@ -1,11 +1,12 @@
 import asyncio
 import time
 import os
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime, timedelta
 import logging
 
 import discord
+from discord import Poll, PollMedia, PollAnswer
 from discord.ext import commands
 from discord.ui import Modal, InputText, View, Button
 
@@ -23,6 +24,19 @@ def log_vote(message: str) -> None:
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     with open(log_file_path, 'a') as file:
         file.write(f"[{timestamp}] {message}\n")
+
+
+def validate_duration(duration_hours: float) -> tuple[float, Optional[str]]:
+    """Validate and cap duration at 32 hours per user requirements."""
+    MAX_DURATION = 32  # 32 hours as specified by user
+
+    if duration_hours <= 0:
+        return 24.0, "⚠️ Duration must be positive. Using default 24 hours."
+
+    if duration_hours > MAX_DURATION:
+        return MAX_DURATION, f"⚠️ Duration capped at {MAX_DURATION} hours (maximum allowed)."
+
+    return duration_hours, None
 
 
 class ReviewModal(Modal):
@@ -46,84 +60,181 @@ class ReviewModal(Modal):
         await interaction.response.defer()
 
 
-class VoteView(View):
+class PollVoteView:
+    """Manages Discord native poll-based voting workflow."""
+
     def __init__(self,
                  author: str,
                  draft_name: str,
+                 draft_url: str,
                  required_votes: int = 3,
-                 timeout: float = 86400):  # 24 hours default
-        super().__init__(timeout=timeout)
+                 duration_hours: float = 24.0):
         self.author = author
         self.draft_name = draft_name
+        self.draft_url = draft_url
         self.required_votes = required_votes
-        self.approve_votes: List[int] = []
-        self.reject_votes: List[int] = []
-        self.result: Optional[bool] = None
-        self.end_time = int((datetime.now() + timedelta(seconds=timeout)).timestamp())
-        self.message = None
+        self.duration_hours = duration_hours
+        self.result: Optional[str] = None  # "approve", "reject", "tie", or None
+        self.approve_count = 0
+        self.reject_count = 0
+        self.end_time = int((datetime.now() + timedelta(hours=duration_hours)).timestamp())
 
-    def _create_status_embed(self) -> discord.Embed:
-        """Create an embed showing the current voting status."""
+    def create_poll(self) -> Poll:
+        """Create the Discord poll object."""
+        question = PollMedia(
+            text=f"Vote: {self.draft_name} by {self.author}"
+        )
+
+        answers = [
+            PollAnswer(
+                poll_id=1,
+                media=PollMedia(text="Approve", emoji="✅")
+            ),
+            PollAnswer(
+                poll_id=2,
+                media=PollMedia(text="Reject", emoji="❌")
+            )
+        ]
+
+        # Duration in hours (Discord API expects hours as integer)
+        duration = int(self.duration_hours)
+
+        return Poll(
+            question=question,
+            answers=answers,
+            duration=duration,
+            allow_multiselect=False
+        )
+
+    def create_status_embed(self) -> discord.Embed:
+        """Create embed with vote context."""
         embed = discord.Embed(
-            title=f"Vote: {self.draft_name}",
+            title=f"📊 Vote: {self.draft_name}",
             description=(
-                f"Draft by {self.author}\n\n"
-                f"Required votes: {self.required_votes}\n"
-                f"Ends: <t:{self.end_time}:R>\n\n"
-                f"Current status:\n"
-                f"✅ Approve: {len(self.approve_votes)}\n"
-                f"❌ Reject: {len(self.reject_votes)}"
+                f"**Author:** {self.author}\n"
+                f"**Draft:** [View Draft]({self.draft_url})\n\n"
+                f"**Required votes:** {self.required_votes}\n"
+                f"**Duration:** {self.duration_hours} hours\n"
+                f"**Ends:** <t:{self.end_time}:R>\n\n"
+                f"Vote using the poll below. "
+                f"First option to reach {self.required_votes} votes wins."
             ),
             color=discord.Color.blue()
         )
         return embed
 
-    @discord.ui.button(label="Approve (0)", style=discord.ButtonStyle.green, emoji="✅")
-    async def approve(self, button: Button, interaction: discord.Interaction):
-        await self._handle_vote(interaction, True)
+    async def monitor_and_wait(self,
+                               message: discord.Message,
+                               check_interval: int = 10) -> Optional[str]:
+        """
+        Monitor poll results until threshold reached or timeout.
 
-    @discord.ui.button(label="Reject (0)", style=discord.ButtonStyle.red, emoji="❌")
-    async def reject(self, button: Button, interaction: discord.Interaction):
-        await self._handle_vote(interaction, False)
+        Returns:
+            "approve" if approve threshold reached
+            "reject" if reject threshold reached
+            "tie" if both thresholds reached simultaneously
+            None if timeout
+        """
+        start_time = time.time()
+        duration_seconds = self.duration_hours * 3600
+        check_count = 0
 
-    async def _handle_vote(self, interaction: discord.Interaction, is_approve: bool):
-        """Handle a vote being cast."""
-        user_id = interaction.user.id
+        logger.info(f"Starting poll monitor for {self.draft_name} - "
+                   f"required: {self.required_votes}, duration: {self.duration_hours}h")
 
-        # Remove existing votes by this user
-        if user_id in self.approve_votes:
-            self.approve_votes.remove(user_id)
-        if user_id in self.reject_votes:
-            self.reject_votes.remove(user_id)
+        while time.time() - start_time < duration_seconds:
+            await asyncio.sleep(check_interval)
+            check_count += 1
 
-        # Add new vote
-        if is_approve:
-            self.approve_votes.append(user_id)
-        else:
-            self.reject_votes.append(user_id)
+            try:
+                # Fetch fresh message to get updated poll results
+                message = await message.channel.fetch_message(message.id)
+                poll = message.poll
 
-        # Update button labels
-        self.children[0].label = f"Approve ({len(self.approve_votes)})"
-        self.children[1].label = f"Reject ({len(self.reject_votes)})"
+                if not poll or not poll.results:
+                    continue
 
-        # Check if we've reached the required votes
-        if len(self.approve_votes) >= self.required_votes:
-            self.result = True
-            self.stop()
-        elif len(self.reject_votes) >= self.required_votes:
-            self.result = False
-            self.stop()
+                # Get vote counts (answer IDs start at 1)
+                answer_counts = poll.results.answer_counts
+                self.approve_count = answer_counts[0].count  # Approve
+                self.reject_count = answer_counts[1].count   # Reject
 
-        # Update the message
-        embed = self._create_status_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+                # Log periodically (every 6 minutes with 10s interval)
+                if check_count % 36 == 0:
+                    log_vote(f"Poll check for {self.draft_name}: "
+                            f"Approve {self.approve_count}, Reject {self.reject_count}")
 
-    async def on_timeout(self) -> None:
-        """Handle view timeout"""
-        for item in self.children:
-            item.disabled = True
-        if self.message:
-            await self.message.edit(view=self)
+                # Check if threshold reached
+                approve_threshold = self.approve_count >= self.required_votes
+                reject_threshold = self.reject_count >= self.required_votes
+
+                if approve_threshold and reject_threshold:
+                    # Both reached threshold - determine winner
+                    if self.approve_count > self.reject_count:
+                        self.result = "approve"
+                    elif self.reject_count > self.approve_count:
+                        self.result = "reject"
+                    else:
+                        self.result = "tie"
+
+                    log_vote(f"Poll threshold reached for {self.draft_name}: "
+                            f"{self.result.upper()} ({self.approve_count} approve, "
+                            f"{self.reject_count} reject)")
+                    return self.result
+
+                elif approve_threshold:
+                    self.result = "approve"
+                    log_vote(f"Poll threshold reached for {self.draft_name}: "
+                            f"APPROVE ({self.approve_count} votes)")
+                    return "approve"
+
+                elif reject_threshold:
+                    self.result = "reject"
+                    log_vote(f"Poll threshold reached for {self.draft_name}: "
+                            f"REJECT ({self.reject_count} votes)")
+                    return "reject"
+
+            except discord.NotFound:
+                log_vote(f"Poll message deleted for {self.draft_name}")
+                logger.error(f"Vote message was deleted for {self.draft_name}")
+                return None
+
+            except discord.HTTPException as e:
+                logger.error(f"Failed to fetch poll results for {self.draft_name}: {e}")
+                # Continue monitoring; may be temporary API issue
+                continue
+
+        # Timeout reached
+        log_vote(f"Poll timed out for {self.draft_name}: "
+                f"{self.approve_count} approve, {self.reject_count} reject "
+                f"(needed {self.required_votes})")
+        return None
+
+
+class FinalizeView(View):
+    """View with button to trigger ReviewModal for finalizing vote."""
+
+    def __init__(self, is_approval: bool):
+        super().__init__(timeout=300)  # 5 minutes to respond
+        self.is_approval = is_approval
+        self.result = None
+
+        # Add the button dynamically based on approval status
+        button = Button(
+            label="Add Categories" if is_approval else "Add Rejection Reason",
+            style=discord.ButtonStyle.primary,
+            emoji="📝"
+        )
+        button.callback = self.finalize
+        self.add_item(button)
+
+    async def finalize(self, interaction: discord.Interaction):
+        """Show modal to collect categories or rejection reason."""
+        modal = ReviewModal(self.is_approval)
+        await interaction.response.send_modal(modal)
+        await modal.wait()
+        self.result = modal.result
+        self.stop()
 
 
 class DraftVote(commands.Cog):
@@ -134,7 +245,7 @@ class DraftVote(commands.Cog):
 
     @discord.slash_command(
         name="vote",
-        description="Start a vote on a draft"
+        description="Start a vote on a draft using Discord polls"
     )
     @commands.has_any_role(843007895573889024, 1159901879417974795)
     async def vote(
@@ -146,7 +257,7 @@ class DraftVote(commands.Cog):
             duration: Optional[float] = 24.0
     ):
         """
-        Start a vote on a draft
+        Start a poll vote on a draft
 
         Parameters
         ----------
@@ -157,7 +268,7 @@ class DraftVote(commands.Cog):
         required_votes : int
             Number of votes required for decision (default: 3)
         duration : float
-            Duration of vote in hours (default: 24)
+            Duration of vote in hours (default: 24, max: 32)
         """
         await ctx.defer()
 
@@ -167,63 +278,144 @@ class DraftVote(commands.Cog):
             draft = self.db.get_draft(draft_title)
             if not draft:
                 await ctx.followup.send(
-                    f"Error: Draft '{draft_name}' by {author} not found.",
+                    f"❌ Error: Draft '{draft_name}' by {author} not found.",
                     ephemeral=True
                 )
                 return
 
-            # Create and start vote
-            view = VoteView(
+            # Validate and cap duration
+            duration, warning = validate_duration(duration)
+            if warning:
+                await ctx.followup.send(warning, ephemeral=True)
+
+            # Create poll vote view
+            poll_view = PollVoteView(
                 author=author,
                 draft_name=draft_name,
+                draft_url=draft.url,
                 required_votes=required_votes,
-                timeout=duration * 3600
+                duration_hours=duration
             )
 
-            embed = view._create_status_embed()
-            message = await ctx.followup.send(embed=embed, view=view)
-            view.message = message
+            # Create poll and embed
+            poll = poll_view.create_poll()
+            embed = poll_view.create_status_embed()
 
-            log_vote(f"Vote started for {draft_name} by {author}")
+            # Send poll
+            message = await ctx.followup.send(embed=embed, poll=poll)
 
-            try:
-                await view.wait()
+            log_vote(f"Poll vote started for {draft_name} by {author} - "
+                    f"required: {required_votes}, duration: {duration}h")
 
-                if view.result is None:  # Timeout
-                    await ctx.followup.send("Vote has timed out.")
-                    return
+            # Monitor poll for threshold or timeout
+            result = await poll_view.monitor_and_wait(message)
 
-                # Handle vote result
-                modal = ReviewModal(is_approval=view.result)
-                await ctx.interaction.response.send_modal(modal)
-                await modal.wait()
-
-                if view.result:  # Approved
-                    await self.bot.get_cog('DraftBot').approve(author, draft_name, modal.result)
-                    result_embed = discord.Embed(
-                        title="Draft Approved",
-                        description=f"{draft_name} by {author} has been approved.",
-                        color=discord.Color.green()
-                    )
-                else:  # Rejected
-                    await self.bot.get_cog('DraftBot').reject(author, draft_name, modal.result)
-                    result_embed = discord.Embed(
-                        title="Draft Rejected",
-                        description=f"{draft_name} by {author} has been rejected.",
-                        color=discord.Color.red()
-                    )
-
-                await ctx.followup.send(embed=result_embed)
-                log_vote(f"Vote completed for {draft_name} by {author}: {'Approved' if view.result else 'Rejected'}")
-
-            except asyncio.TimeoutError:
-                log_vote(f"Vote timed out for {draft_name} by {author}")
-                await message.edit(content="Vote has timed out.", view=None)
+            # Handle timeout
+            if result is None:
+                timeout_embed = discord.Embed(
+                    title="⏱️ Vote Timed Out",
+                    description=(
+                        f"Vote for **{draft_name}** by {author} has timed out.\n\n"
+                        f"Final tally:\n"
+                        f"✅ Approve: {poll_view.approve_count}\n"
+                        f"❌ Reject: {poll_view.reject_count}\n\n"
+                        f"Required votes: {required_votes}\n"
+                        f"No action taken."
+                    ),
+                    color=discord.Color.orange()
+                )
+                await ctx.followup.send(embed=timeout_embed)
                 return
+
+            # Handle tie
+            if result == "tie":
+                tie_embed = discord.Embed(
+                    title="🤝 Vote Tied",
+                    description=(
+                        f"Vote for **{draft_name}** by {author} ended in a tie.\n\n"
+                        f"Final tally: {poll_view.approve_count}-{poll_view.reject_count}\n\n"
+                        f"No action taken. Start a new vote if needed."
+                    ),
+                    color=discord.Color.gold()
+                )
+                await ctx.followup.send(embed=tie_embed)
+                log_vote(f"Vote tied for {draft_name} by {author}")
+                return
+
+            # Re-validate draft still exists before finalizing
+            draft = self.db.get_draft(draft_title)
+            if not draft:
+                await ctx.followup.send(
+                    f"⚠️ Draft '{draft_name}' no longer exists. Vote cancelled.",
+                    ephemeral=True
+                )
+                return
+
+            # Show finalization button to collect categories/reason
+            is_approval = (result == "approve")
+            finalize_view = FinalizeView(is_approval=is_approval)
+
+            finalize_prompt = await ctx.followup.send(
+                f"{'✅ **Vote Approved**' if is_approval else '❌ **Vote Rejected**'}\n\n"
+                f"**{draft_name}** by {author}\n"
+                f"Final tally: {poll_view.approve_count} approve, {poll_view.reject_count} reject\n\n"
+                f"Click the button below to finalize:",
+                view=finalize_view,
+                ephemeral=True
+            )
+
+            # Wait for modal completion (5 minute timeout)
+            await finalize_view.wait()
+
+            if finalize_view.result is None:
+                await ctx.followup.send(
+                    "⚠️ Finalization timed out. No action taken.",
+                    ephemeral=True
+                )
+                return
+
+            # Execute approval or rejection
+            if is_approval:
+                await self.bot.get_cog('DraftBot').approve(
+                    author, draft_name, finalize_view.result
+                )
+                result_embed = discord.Embed(
+                    title="✅ Draft Approved",
+                    description=(
+                        f"**{draft_name}** by {author} has been approved.\n\n"
+                        f"Categories: {finalize_view.result}\n"
+                        f"Final vote: {poll_view.approve_count} approve, "
+                        f"{poll_view.reject_count} reject"
+                    ),
+                    color=discord.Color.green()
+                )
+            else:
+                await self.bot.get_cog('DraftBot').reject(
+                    author, draft_name, finalize_view.result
+                )
+                result_embed = discord.Embed(
+                    title="❌ Draft Rejected",
+                    description=(
+                        f"**{draft_name}** by {author} has been rejected.\n\n"
+                        f"Reason: {finalize_view.result}\n"
+                        f"Final vote: {poll_view.approve_count} approve, "
+                        f"{poll_view.reject_count} reject"
+                    ),
+                    color=discord.Color.red()
+                )
+
+            await ctx.followup.send(embed=result_embed)
+            log_vote(f"Vote completed for {draft_name} by {author}: "
+                    f"{'Approved' if is_approval else 'Rejected'} - "
+                    f"{finalize_view.result}")
 
         except Exception as e:
             logger.error(f"Error in vote command: {str(e)}", exc_info=True)
-            await ctx.followup.send(f"An error occurred: {str(e)}", ephemeral=True)
+            log_vote(f"Vote error for {draft_name} by {author}: {str(e)}")
+            await ctx.followup.send(
+                f"❌ An error occurred: {str(e)}",
+                ephemeral=True
+            )
 
 
 def setup(bot: commands.Bot):
