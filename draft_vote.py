@@ -87,11 +87,9 @@ class PollVoteView:
 
         answers = [
             PollAnswer(
-                poll_id=1,
                 media=PollMedia(text="Approve", emoji="✅")
             ),
             PollAnswer(
-                poll_id=2,
                 media=PollMedia(text="Reject", emoji="❌")
             )
         ]
